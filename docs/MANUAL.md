@@ -35,7 +35,7 @@ This manual follows the program from the start page to the finished print. Voxel
 
 ## Scanning
 
-![The scan view, waiting for a scanner](images/scan_live.png)
+![The scan view, ready to scan, with the live pictures](images/scan_live.png)
 
 ### The capture card
 

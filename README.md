@@ -65,6 +65,11 @@ The [manual](docs/MANUAL.md) explains every step and setting.
 
 VoxelForge is young, and so far only the CR-Scan Otter (USB `2bc5:06da`) is supported. Color scans need a color calibration, for which there is no user interface yet.
 
+## USE AT YOUR OWN RISK
+This software is a Proof of Concept (PoC) implementation and is not a final product. It is intended solely for testing and evaluation purposes.
+The software is provided "as is," without any warranty of any kind, express or implied. The authors and contributors assume no liability for any direct, indirect, incidental, or consequential damages, including but not limited to damage to systems, devices, hardware, or data loss arising from the use or inability to use this software.
+By deploying or executing this software, you acknowledge and agree that you do so entirely at your own risk.
+
 ## License
 
 [Apache-2.0](LICENSE). See [NOTICE](NOTICE) for third-party components. "Creality" and "CR-Scan" are trademarks of their owners. VoxelForge is an independent project, not affiliated with or endorsed by Creality or Orbbec.

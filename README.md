@@ -21,7 +21,7 @@ Measured with this software on a 30 mm test cube scanned from about 18 cm: oppos
 
 ## Install
 
-Download from the [releases page](https://github.com/HT686/VoxelForge/releases). All three are for x86-64 Linux with a CPU from about 2013 or newer (AVX2).
+Download from the [releases page](https://github.com/HT686/VoxelForge/releases). All three are for x86-64 Linux with a CPU from about 2013 or newer (AVX2). The setup and the AppImage need glibc 2.35 or newer, which means distributions from 2022 on.
 
 | Package | Best for | How |
 |---|---|---|

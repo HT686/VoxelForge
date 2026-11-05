@@ -519,7 +519,10 @@ int main() {
         CHECK(!strcmp(tr("\xEE\x85\x8D  Speichern##x"), "\xEE\x85\x8D  Enregistrer##x"), "Sprachen: das Symbol bleibt");
         CHECK(!strcmp(tr("Scan_17"), "Scan_17"), "Sprachen: Unbekanntes bleibt, wie es ist");
         CHECK(trf("Wird in %s geöffnet", "Bambu Studio") == "Ouverture dans Bambu Studio", "Sprachen: Wert im Satz");
-        setLanguage(Language::German); CHECK(!strcmp(tr("Speichern"), "Speichern"), "Sprachen: Deutsch ist das Original"); setLanguage(before);
+        CHECK(!strcmp(localDecimals("62.8 x 50.35 x 45.6 mm"), "62,8 x 50,35 x 45,6 mm"), "Dezimalkomma: Werte (%s)", localDecimals("62.8 x 50.35 x 45.6 mm"));
+        CHECK(!strcmp(localDecimals("1.874.488 triangles"), "1.874.488 triangles"), "Dezimalkomma: Tausender bleiben");
+        setLanguage(Language::English); CHECK(!strcmp(localDecimals("62.8 mm"), "62.8 mm"), "Dezimalkomma: Englisch behaelt den Punkt");
+        setLanguage(Language::German); CHECK(!strcmp(tr("Speichern"), "Speichern"), "Sprachen: Deutsch ist das Original"); CHECK(!strcmp(localDecimals("0.25 mm"), "0,25 mm"), "Dezimalkomma: Deutsch"); setLanguage(before);
     }
     // 6k3. What the program remembers, and where new projects go.
     {

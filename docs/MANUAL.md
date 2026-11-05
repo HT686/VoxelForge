@@ -85,7 +85,7 @@ No single view sees an object from all sides. Scan it, lay it on another side, a
 ![A stored scan as a point cloud](images/scan_review.png)
 
 - **New scan** stores the current scan in the project and returns to the live picture.
-- Click a scan in the list to see its point cloud. An opened project starts with its last scan.
+- Click a scan in the list to see its point cloud, in the scan's colors if it has any. An opened project starts with its last scan.
 - The eye icon decides whether a scan is part of the model. The bin removes it.
 
 ### Aligning

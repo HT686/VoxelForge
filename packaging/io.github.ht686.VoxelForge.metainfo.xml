@@ -8,5 +8,5 @@
   <description><p>Native Linux application for the Creality CR-Scan Otter: scanning, fusion of several scans, mesh repair and export to slicers.</p></description>
   <launchable type="desktop-id">io.github.ht686.VoxelForge.desktop</launchable>
   <url type="homepage">https://github.com/HT686/VoxelForge</url>
-  <releases><release version="1.2.0" date="2026-11-05"/><release version="1.1.0" date="2026-11-05"/></releases>
+  <releases><release version="1.2.1" date="2026-11-05"/><release version="1.2.0" date="2026-11-05"/><release version="1.1.0" date="2026-11-05"/></releases>
 </component>

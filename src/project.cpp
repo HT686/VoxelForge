@@ -229,6 +229,11 @@ void buildPointCloud(ScanData& scan) {
         if (b-a >= kMinSamples) { m->vertices.push_back(p*(1.f/(b-a))); m->normals.push_back(normalized(n)); }
         a = b;
     }
+    // In the scan's colors, if it has any. Too little light leaves it without, see colorFromFrames.
+    if (scan.colorCalib.valid && !m->vertices.empty()) {
+        const ScanView self{&scan.frames, &scan.grid, &scan.colorCalib, Pose{}};
+        colorFromFrames(*m, {self}, std::max(2.f, cube*2));
+    }
     scan.cloud = m;
 }
 void buildOverview(ScanData& scan) {

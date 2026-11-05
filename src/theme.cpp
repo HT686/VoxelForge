@@ -145,6 +145,7 @@ bool segmented(const char* id, int& value, const char* const* names, int n) {
     ImGui::SetCursorScreenPos(p); ImGui::Dummy({w, h}); ImGui::PopID(); return changed;
 }
 static bool sliderCore(const char* label, float* t01, const char* valueText) {
+    valueText = localDecimals(valueText);
     const char* const rawLabel = label; (void)rawLabel; label = tr(label);
     ImGui::PushID(label); const float w = ImGui::GetContentRegionAvail().x; const ImVec2 p = ImGui::GetCursorScreenPos(); const float a = ImGui::GetStyle().Alpha;
     const float lineH = ImGui::GetTextLineHeight(), h = lineH+px(20);
@@ -210,20 +211,20 @@ bool collapsible(const char* label, bool defaultOpen) {
 }
 void hint(const char* t) { ImGui::PushStyleColor(ImGuiCol_Text, textDim); ImGui::TextWrapped("%s", tr(t)); ImGui::PopStyleColor(); }
 void labelValue(const char* label, const char* value, const ImVec4& color) {
-    label = tr(label); value = tr(value);
+    label = tr(label); value = localDecimals(tr(value));
     ImGui::PushStyleColor(ImGuiCol_Text, textDim); ImGui::TextUnformatted(label); ImGui::PopStyleColor();
     ImGui::PushFont(fontMedium); const float w = ImGui::CalcTextSize(value).x; ImGui::SameLine(ImGui::GetContentRegionMax().x-w); ImGui::PushStyleColor(ImGuiCol_Text, color); ImGui::TextUnformatted(value); ImGui::PopStyleColor(); ImGui::PopFont();
 }
 static ImVec2 chipSize(const char* t, const char* icon) { ImVec2 s = ImGui::CalcTextSize(t); float w = s.x+px(20); if (icon) w += ImGui::CalcTextSize(icon).x+px(6); return {w, s.y+px(10)}; }
 void chipAt(ImDrawList* dl, ImVec2 p, const char* t, const ImVec4& color, const char* icon) {
-    t = tr(t);
+    t = localDecimals(tr(t));
     ImGui::PushFont(fontMedium); const ImVec2 sz = chipSize(t, icon); const float a = ImGui::GetStyle().Alpha;
     dl->AddRectFilled(p, {p.x+sz.x, p.y+sz.y}, col(ImVec4(.05f, .065f, .09f, .88f), a), sz.y/2);
     dl->AddRect(p, {p.x+sz.x, p.y+sz.y}, col(alpha(color, .32f), a), sz.y/2);
     float x = p.x+px(10); if (icon) { dl->AddText({x, p.y+px(5)}, col(color, a), icon); x += ImGui::CalcTextSize(icon).x+px(6); }
     dl->AddText({x, p.y+px(5)}, col(color, a), t); ImGui::PopFont();
 }
-void chip(const char* t, const ImVec4& color, const char* icon) { t = tr(t); ImGui::PushFont(fontMedium); const ImVec2 sz = chipSize(t, icon); ImGui::PopFont(); const ImVec2 p = ImGui::GetCursorScreenPos(); ImGui::Dummy(sz); chipAt(ImGui::GetWindowDrawList(), p, t, color, icon); }
+void chip(const char* t, const ImVec4& color, const char* icon) { t = localDecimals(tr(t)); ImGui::PushFont(fontMedium); const ImVec2 sz = chipSize(t, icon); ImGui::PopFont(); const ImVec2 p = ImGui::GetCursorScreenPos(); ImGui::Dummy(sz); chipAt(ImGui::GetWindowDrawList(), p, t, color, icon); }
 void spinner(ImDrawList* dl, ImVec2 c, float r, const ImVec4& color) {
     const float t = (float)ImGui::GetTime()*4.5f; const float a0 = t, a1 = t+3.14159f*1.35f;
     dl->PathArcTo(c, r, a0, a1, 32); dl->PathStroke(col(color), 0, px(2.5f));

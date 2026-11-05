@@ -294,7 +294,7 @@ void EditUi::holesPanel() {
         while (clip.Step()) for (int row = clip.DisplayStart; row < clip.DisplayEnd; row++) {
             const size_t i = holes_.size()-1-(size_t)row;   // largest first
             float r, g, bl; holeColor(holes_[i].perimeterMm, r, g, bl); char label[96];
-            snprintf(label, sizeof label, "      %.1f mm, %.1f mm groß##%zu", holes_[i].perimeterMm, holes_[i].sizeMm, i);
+            { char text[120]; snprintf(text, sizeof text, tr("%.1f mm, %.1f mm groß"), holes_[i].perimeterMm, holes_[i].sizeMm); snprintf(label, sizeof label, "      %s##%zu", localDecimals(text), i); };
             const ImVec2 at = ImGui::GetCursorScreenPos();
             if (ImGui::Selectable(label, holeChosen_[i] != 0, ImGuiSelectableFlags_AllowDoubleClick)) {
                 holeChosen_[i] = !holeChosen_[i]; dropPreview(); linesDirty_ = true;
@@ -355,7 +355,7 @@ void EditUi::holesInput(float mx, float my, bool clicked) {
     if (analysisRunning_ || holes_.empty()) return;
     size_t seg = 0; const long h = nearestRim(mx, my, &seg, 9);
     if (h != holeHover_) { holeHover_ = h; linesDirty_ = true; }
-    if (h >= 0) ImGui::SetTooltip(tr("Umfang %.1f mm\nGröße %.1f mm\n%zu Randpunkte"), holes_[h].perimeterMm, holes_[h].sizeMm, holes_[h].loop.size());
+    if (h >= 0) { char tip[160]; snprintf(tip, sizeof tip, tr("Umfang %.1f mm\nGröße %.1f mm\n%zu Randpunkte"), holes_[h].perimeterMm, holes_[h].sizeMm, holes_[h].loop.size()); ImGui::SetTooltip("%s", localDecimals(tip)); }
     if (!clicked || h < 0 || !holeManual_) return;
     if (bridging_) {
         const auto& l = holes_[h].loop; const uint32_t a = l[seg%l.size()], b = l[(seg+1)%l.size()];
@@ -545,7 +545,7 @@ void EditUi::measurePanel() {
     forge::hint(tr("Zwei Punkte auf dem Modell anklicken, um ihren Abstand zu messen."));
     if (measurePoints_.size() == 2) {
         const V3 d = measurePoints_[1]-measurePoints_[0]; char b[160];
-        ImGui::PushFont(forge::fontTitle); snprintf(b, sizeof b, "%.2f mm", norm(d)); ImGui::TextColored(forge::orange, "%s", b); ImGui::PopFont();
+        ImGui::PushFont(forge::fontTitle); snprintf(b, sizeof b, "%.2f mm", norm(d)); ImGui::TextColored(forge::orange, "%s", localDecimals(b)); ImGui::PopFont();
         snprintf(b, sizeof b, "%.2f mm", std::fabs(d.x)); forge::labelValue("X", b); snprintf(b, sizeof b, "%.2f mm", std::fabs(d.y)); forge::labelValue("Y", b); snprintf(b, sizeof b, "%.2f mm", std::fabs(d.z)); forge::labelValue("Z", b);
     }
     ImGui::BeginDisabled(measurePoints_.empty());
@@ -569,7 +569,7 @@ void EditUi::drawMeasure(ImVec2 o) {
     ImDrawList* dl = ImGui::GetWindowDrawList(); ImVec2 s[2]; int n = 0;
     for (const V3& p : measurePoints_) { float x, y, d; if (view_.project(p, x, y, d)) { s[n] = {o.x+x, o.y+y}; dl->AddCircleFilled(s[n], 5, IM_COL32(245, 158, 64, 255)); n++; } }
     if (n == 2) {
-        dl->AddLine(s[0], s[1], IM_COL32(245, 158, 64, 255), 2); char b[32]; snprintf(b, sizeof b, "%.2f mm", norm(measurePoints_[1]-measurePoints_[0]));
+        dl->AddLine(s[0], s[1], IM_COL32(245, 158, 64, 255), 2); char b[32]; snprintf(b, sizeof b, "%.2f mm", norm(measurePoints_[1]-measurePoints_[0])); snprintf(b, sizeof b, "%s", localDecimals(b));
         const ImVec2 m{(s[0].x+s[1].x)/2+8, (s[0].y+s[1].y)/2-8}, ts = ImGui::CalcTextSize(b);
         dl->AddRectFilled({m.x-3, m.y-2}, {m.x+ts.x+3, m.y+ts.y+2}, IM_COL32(3, 12, 24, 220), 3); dl->AddText(m, IM_COL32(245, 158, 64, 255), b);
     }

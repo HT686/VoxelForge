@@ -60,3 +60,12 @@ const char* tr(const char* german) {
 std::string trf(const char* german, const std::string& value) {
     std::string t = tr(german); const size_t at = t.find("%s"); if (at != std::string::npos) t.replace(at, 2, value); return t;
 }
+const char* localDecimals(const char* text) {
+    if (!text || language() == Language::English) return text;
+    // A decimal point stands between digits and has one or two digits after it. Thousands always have three.
+    static thread_local std::string ring[8]; static thread_local int next = 0; std::string& s = ring[next]; next = (next+1)%8; s = text;
+    const auto digit = [&](size_t p) { return p < s.size() && s[p] >= '0' && s[p] <= '9'; };
+    for (size_t p = 1; p+1 < s.size(); p++) if (s[p] == '.' && digit(p-1) && digit(p+1) && (!digit(p+2) || !digit(p+3))) { size_t e = p+1; while (digit(e)) e++; if (e-p-1 <= 2) s[p] = ','; }
+    return s.c_str();
+}
+

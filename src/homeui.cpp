@@ -67,7 +67,7 @@ void HomeUi::projectCard(const ProjectEntry& e, ImVec2 size) {
     char when[40], sub[80]; const time_t tt = (time_t)e.modified;
     strftime(when, sizeof when, tr("%d.%m.%Y, %H:%M"), localtime(&tt));
     if (e.bytes >= 1000000000ull) snprintf(sub, sizeof sub, "%s  ·  %.1f GB", when, e.bytes/1e9); else snprintf(sub, sizeof sub, "%s  ·  %.0f MB", when, e.bytes/1e6);
-    dl->AddText(forge::fontBody, ImGui::GetFontSize()*.88f, {p.x+px(14), p.y+imgH+px(32)}, forge::col(forge::textDim), sub);
+    dl->AddText(forge::fontBody, ImGui::GetFontSize()*.88f, {p.x+px(14), p.y+imgH+px(32)}, forge::col(forge::textDim), localDecimals(sub));
     bool removed = false;
     if (hovered || ImGui::IsMouseHoveringRect({q.x-px(40), p.y}, {q.x, p.y+px(40)})) {
         const ImVec2 back = ImGui::GetCursorScreenPos(); ImGui::SetCursorScreenPos({q.x-px(38), p.y+px(8)});

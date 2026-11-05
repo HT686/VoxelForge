@@ -188,6 +188,7 @@ public:
         else if (c == "project") { printf("[%s] %s\n", rest.c_str(), project.describe().c_str()); fflush(stdout); }
         else if (c == "shot") { pendingShot_ = rest; }
         else if (c == "quit") { glfwSetWindowShouldClose(win, 1); }
+        else if (c == "close") { glfwSetWindowShouldClose(win, 1); wait_ = 10; }
         pos_++;
     }
     // After the frame is drawn.
@@ -312,7 +313,15 @@ int main() {
     std::vector<ImVec2> markerSpots;
     bool helpRequest = false;
 
-    while (!glfwWindowShouldClose(win)) {
+    bool mayClose = false;
+    while (true) {
+        // Closing with scans that are not saved asks first, as starting another project does.
+        if (glfwWindowShouldClose(win)) {
+            if (mayClose || shot || !home.hasUnsavedWork || !home.hasUnsavedWork()) break;
+            glfwSetWindowShouldClose(win, 0);
+            scanning = false; cmd.scanning = false;
+            home.guard([&] { mayClose = true; glfwSetWindowShouldClose(win, 1); });
+        }
         glfwPollEvents();
         PipelineStats st; std::string status, info; bool connected, colorAvailable; float fps; int exposure;
         {

@@ -11,6 +11,8 @@ void setLanguage(Language l);
 const char* tr(const char* german);
 // For a sentence around one value: the %s in the translated text is replaced.
 std::string trf(const char* german, const std::string& value);
+// A computed number for display: 62.8 becomes 62,8 where the language writes it so. Thousands stay.
+const char* localDecimals(const char* text);
 // For the tests: number of lines, and the line's texts in all four languages.
 int translationCount();
 const char* translationText(int line, int language);

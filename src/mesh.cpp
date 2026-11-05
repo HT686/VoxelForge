@@ -1,4 +1,5 @@
 #include "mesh.hpp"
+#include "i18n.hpp"
 #include <algorithm>
 #include <functional>
 #include <cstdio>
@@ -411,10 +412,10 @@ std::string uniquePath(const std::string& base, const std::string& ext) {
 bool saveMesh(const Mesh& m, const std::string& path, std::string& error) {
     std::string ext = std::filesystem::path(path).extension().string();
     std::transform(ext.begin(), ext.end(), ext.begin(), ::tolower);
-    if (m.indices.empty()) { error = "Das Netz ist leer"; return false; }
+    if (m.indices.empty()) { error = tr("Das Netz ist leer"); return false; }
     std::string tmp = path + ".tmp";
     FILE* f = fopen(tmp.c_str(), "wb");
-    if (!f) { error = "Datei kann nicht geschrieben werden: " + path; return false; }
+    if (!f) { error = tr("Datei kann nicht geschrieben werden: ") + path; return false; }
     bool ok = true;
     if (ext == ".stl") {
         char hdr[80] = "VoxelForge binary STL, units: mm"; fwrite(hdr, 1, 80, f);
@@ -438,9 +439,9 @@ bool saveMesh(const Mesh& m, const std::string& path, std::string& error) {
         const bool col = m.colors.size() == m.vertices.size()*3;
         for (size_t i = 0; i < m.vertices.size(); i++) { float r[6] = {m.vertices[i].x, m.vertices[i].y, m.vertices[i].z, m.normals[i].x, m.normals[i].y, m.normals[i].z}; ok = fwrite(r, 4, 6, f) == 6 && ok; if (col) ok = fwrite(&m.colors[i*3], 1, 3, f) == 3 && ok; }
         for (size_t i = 0; i < m.indices.size(); i += 3) { uint8_t c = 3; ok = fwrite(&c, 1, 1, f) == 1 && fwrite(&m.indices[i], 4, 3, f) == 3 && ok; }
-    } else { fclose(f); std::remove(tmp.c_str()); error = "Unbekanntes Dateiformat: " + ext; return false; }
+    } else { fclose(f); std::remove(tmp.c_str()); error = tr("Unbekanntes Dateiformat: ") + ext; return false; }
     ok = fclose(f) == 0 && ok;
-    if (!ok) { std::remove(tmp.c_str()); error = "Schreibfehler (Festplatte voll?)"; return false; }
+    if (!ok) { std::remove(tmp.c_str()); error = tr("Schreibfehler (Festplatte voll?)"); return false; }
     std::rename(tmp.c_str(), path.c_str());
     return true;
 }

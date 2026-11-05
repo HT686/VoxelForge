@@ -1,4 +1,5 @@
 #include "gpustereo.hpp"
+#include "i18n.hpp"
 #define GL_GLEXT_PROTOTYPES
 #define EGL_EGLEXT_PROTOTYPES
 #include <EGL/egl.h>
@@ -136,7 +137,7 @@ void main(){ ivec2 g=ivec2(gl_GlobalInvocationID.xy); if(g.x>=gw||g.y>=gh) retur
 }
 
 struct GpuStereo::Impl {
-    EGLDisplay display = EGL_NO_DISPLAY; EGLContext context = EGL_NO_CONTEXT; EGLSurface surface = EGL_NO_SURFACE; std::string info = "noch nicht gestartet"; bool ready = false;
+    EGLDisplay display = EGL_NO_DISPLAY; EGLContext context = EGL_NO_CONTEXT; EGLSurface surface = EGL_NO_SURFACE; std::string info = tr("noch nicht gestartet"); bool ready = false;
     GLuint halfP = 0, censusP = 0, columnsP = 0, selectP = 0, fineP = 0, refineP = 0;
     GLuint texRef = 0, texOther = 0, halfRef = 0, halfOther = 0, cenRef = 0, cenOther = 0, coarse = 0, columns = 0, bufA = 0, bufB = 0;
     int W = 0, H = 0, volumeS = 0, cells = 0;
@@ -153,8 +154,8 @@ struct GpuStereo::Impl {
     bool current() { return eglGetCurrentContext() == context || eglMakeCurrent(display, surface, surface, context); }
     bool wait() {
         GLsync f = glFenceSync(GL_SYNC_GPU_COMMANDS_COMPLETE, 0); const GLenum r = glClientWaitSync(f, GL_SYNC_FLUSH_COMMANDS_BIT, kWaitNs); glDeleteSync(f);
-        if (r != GL_ALREADY_SIGNALED && r != GL_CONDITION_SATISFIED) { info = "Die Grafikkarte antwortet nicht mehr."; ready = false; return false; }
-        if (glGetError() != GL_NO_ERROR) { info = "Fehler der Grafikkarte."; ready = false; return false; }
+        if (r != GL_ALREADY_SIGNALED && r != GL_CONDITION_SATISFIED) { info = tr("Die Grafikkarte antwortet nicht mehr."); ready = false; return false; }
+        if (glGetError() != GL_NO_ERROR) { info = tr("Fehler der Grafikkarte."); ready = false; return false; }
         return true;
     }
     void resize(int w, int h) {
@@ -186,20 +187,20 @@ bool GpuStereo::init() {
     auto getPlatform = (PFNEGLGETPLATFORMDISPLAYEXTPROC)eglGetProcAddress("eglGetPlatformDisplayEXT");
     EGLint major = 0, minor = 0;
     if (getPlatform) { g.display = getPlatform(EGL_PLATFORM_SURFACELESS_MESA, EGL_DEFAULT_DISPLAY, nullptr); if (g.display != EGL_NO_DISPLAY && !eglInitialize(g.display, &major, &minor)) g.display = EGL_NO_DISPLAY; }
-    if (g.display == EGL_NO_DISPLAY) { g.display = eglGetDisplay(EGL_DEFAULT_DISPLAY); if (g.display == EGL_NO_DISPLAY || !eglInitialize(g.display, &major, &minor)) { g.display = EGL_NO_DISPLAY; g.info = "Keine Grafikschnittstelle (EGL) gefunden."; return false; } }
-    if (!eglBindAPI(EGL_OPENGL_API)) { g.info = "OpenGL über EGL ist nicht verfügbar."; return false; }
+    if (g.display == EGL_NO_DISPLAY) { g.display = eglGetDisplay(EGL_DEFAULT_DISPLAY); if (g.display == EGL_NO_DISPLAY || !eglInitialize(g.display, &major, &minor)) { g.display = EGL_NO_DISPLAY; g.info = tr("Keine Grafikschnittstelle (EGL) gefunden."); return false; } }
+    if (!eglBindAPI(EGL_OPENGL_API)) { g.info = tr("OpenGL über EGL ist nicht verfügbar."); return false; }
     const EGLint want[] = {EGL_SURFACE_TYPE, EGL_PBUFFER_BIT, EGL_RENDERABLE_TYPE, EGL_OPENGL_BIT, EGL_NONE}; EGLConfig config = nullptr; EGLint found = 0;
     eglChooseConfig(g.display, want, &config, 1, &found);
     const EGLint version[] = {EGL_CONTEXT_MAJOR_VERSION, 4, EGL_CONTEXT_MINOR_VERSION, 3, EGL_CONTEXT_OPENGL_PROFILE_MASK, EGL_CONTEXT_OPENGL_CORE_PROFILE_BIT, EGL_NONE};
     g.context = eglCreateContext(g.display, found ? config : EGL_NO_CONFIG_KHR, EGL_NO_CONTEXT, version);
-    if (g.context == EGL_NO_CONTEXT) { g.info = "Die Grafikkarte bietet kein OpenGL 4.3."; return false; }
+    if (g.context == EGL_NO_CONTEXT) { g.info = tr("Die Grafikkarte bietet kein OpenGL 4.3."); return false; }
     if (!eglMakeCurrent(g.display, EGL_NO_SURFACE, EGL_NO_SURFACE, g.context)) {
         const EGLint size[] = {EGL_WIDTH, 1, EGL_HEIGHT, 1, EGL_NONE}; if (found) g.surface = eglCreatePbufferSurface(g.display, config, size);
-        if (g.surface == EGL_NO_SURFACE || !eglMakeCurrent(g.display, g.surface, g.surface, g.context)) { g.info = "Der Grafikkontext ließ sich nicht aktivieren."; return false; }
+        if (g.surface == EGL_NO_SURFACE || !eglMakeCurrent(g.display, g.surface, g.surface, g.context)) { g.info = tr("Der Grafikkontext ließ sich nicht aktivieren."); return false; }
     }
     const char* renderer = (const char*)glGetString(GL_RENDERER); g.info = renderer ? renderer : "unbekannt";
     // A software renderer would only be slower than the CPU code.
-    if (g.info.find("llvmpipe") != std::string::npos || g.info.find("softpipe") != std::string::npos || g.info.find("Software") != std::string::npos) { g.info = "Nur Software-Grafik ("+g.info+")."; return false; }
+    if (g.info.find("llvmpipe") != std::string::npos || g.info.find("softpipe") != std::string::npos || g.info.find("Software") != std::string::npos) { g.info = trf("Nur Software-Grafik (%s).", g.info); return false; }
     if (!(g.halfP = g.program(kHalf, "half")) || !(g.censusP = g.program(kCensus, "census")) || !(g.columnsP = g.program(kColumns, "columns")) || !(g.selectP = g.program(kSelect, "select")) || !(g.fineP = g.program(kFine, "fine")) || !(g.refineP = g.program(kRefine, "refine"))) return false;
     g.ready = true; return true;
 }

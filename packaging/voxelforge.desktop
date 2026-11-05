@@ -2,6 +2,9 @@
 Type=Application
 Name=VoxelForge
 Comment=Open Source 3D Scanning for Linux
+Comment[de]=Open-Source-3D-Scannen für Linux
+Comment[fr]=Numérisation 3D open source pour Linux
+Comment[es]=Escaneo 3D de código abierto para Linux
 Exec=voxelforge
 Icon=voxelforge
 Terminal=false

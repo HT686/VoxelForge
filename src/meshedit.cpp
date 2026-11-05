@@ -1,4 +1,5 @@
 #include "meshedit.hpp"
+#include "i18n.hpp"
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
@@ -667,14 +668,14 @@ OneClickReport runOneClick(Mesh& m, const OneClickConfig& c, const std::function
     OneClickReport r; r.trianglesBefore = m.triangleCount();
     auto step = [&](const char* s, float f) { if (progress) progress(s, f); };
     repairManifold(m);
-    step("Kleine Teile entfernen", 0.f); r.partsRemoved = removeSmallParts(m, c.minPartShare);
-    step("Spitzen entfernen", .12f); r.spikesMoved = removeSpikes(m, c.spikes);
-    step("Glätten", .25f); { SmoothOptions so; so.iterations = smoothIterationsFor(c.smooth); so.keepEdges = c.keepEdges; smoothSurface(m, so); }
-    step("Ränder glätten", .4f); smoothRims(m, c.rimSmooth);
-    step("Löcher füllen", .5f);
+    step(tr("Kleine Teile entfernen"), 0.f); r.partsRemoved = removeSmallParts(m, c.minPartShare);
+    step(tr("Spitzen entfernen"), .12f); r.spikesMoved = removeSpikes(m, c.spikes);
+    step(tr("Glätten"), .25f); { SmoothOptions so; so.iterations = smoothIterationsFor(c.smooth); so.keepEdges = c.keepEdges; smoothSurface(m, so); }
+    step(tr("Ränder glätten"), .4f); smoothRims(m, c.rimSmooth);
+    step(tr("Löcher füllen"), .5f);
     if (c.fillHoles) r.holesClosed = fillHolesUpTo(m, c.maxHolePerimeterMm, c.fillType);
     r.holesLeft = (int)findHoles(m).size();
-    step("Vereinfachen", .85f);
+    step(tr("Vereinfachen"), .85f);
     if (c.keepTriangles < 0.999f) simplifyMesh(m, (size_t)(m.triangleCount()*std::max(0.001f, c.keepTriangles)));
     computeNormals(m);
     step("Fertig", 1.f); r.trianglesAfter = m.triangleCount();
@@ -724,7 +725,7 @@ void weldVertices(Mesh& m) {
     m.vertices.swap(nv); m.indices.swap(ni); m.colors.swap(nc); m.normals.clear();
 }
 static bool loadObj(const std::string& path, Mesh& out, std::string& error) {
-    FILE* f = fopen(path.c_str(), "r"); if (!f) { error = "Datei nicht lesbar: " + path; return false; }
+    FILE* f = fopen(path.c_str(), "r"); if (!f) { error = tr("Datei nicht lesbar: ") + path; return false; }
     out = Mesh{}; char line[512]; bool col = false;
     while (fgets(line, sizeof line, f)) {
         if (line[0] == 'v' && line[1] == ' ') {
@@ -748,11 +749,11 @@ static bool loadObj(const std::string& path, Mesh& out, std::string& error) {
     }
     fclose(f);
     if (!col || out.colors.size() != out.vertices.size()*3) out.colors.clear();
-    for (uint32_t v : out.indices) if (v >= out.vertices.size()) { error = "OBJ-Datei ist beschädigt"; return false; }
+    for (uint32_t v : out.indices) if (v >= out.vertices.size()) { error = tr("OBJ-Datei ist beschädigt"); return false; }
     return true;
 }
 static bool loadPly(const std::string& path, Mesh& out, std::string& error) {
-    FILE* f = fopen(path.c_str(), "rb"); if (!f) { error = "Datei nicht lesbar: " + path; return false; }
+    FILE* f = fopen(path.c_str(), "rb"); if (!f) { error = tr("Datei nicht lesbar: ") + path; return false; }
     char line[256]; size_t nv = 0, nf = 0; bool hasN = false, hasC = false, binary = false;
     while (fgets(line, sizeof line, f)) {
         if (!strncmp(line, "format binary_little_endian", 27)) binary = true;
@@ -761,7 +762,7 @@ static bool loadPly(const std::string& path, Mesh& out, std::string& error) {
         if (strstr(line, "property uchar red")) hasC = true;
         if (!strncmp(line, "end_header", 10)) break;
     }
-    if (!binary || !nv) { fclose(f); error = "Nur binäre PLY-Dateien aus VoxelForge werden unterstützt"; return false; }
+    if (!binary || !nv) { fclose(f); error = tr("Nur binäre PLY-Dateien aus VoxelForge werden unterstützt"); return false; }
     out = Mesh{}; out.vertices.resize(nv); if (hasC) out.colors.resize(nv*3);
     bool ok = true;
     for (size_t i = 0; i < nv && ok; i++) {
@@ -773,7 +774,7 @@ static bool loadPly(const std::string& path, Mesh& out, std::string& error) {
         if (ok) out.indices.insert(out.indices.end(), t, t+3);
     }
     fclose(f);
-    if (!ok) error = "PLY-Datei ist abgeschnitten oder hat ein unbekanntes Format";
+    if (!ok) error = tr("PLY-Datei ist abgeschnitten oder hat ein unbekanntes Format");
     return ok;
 }
 bool loadMeshFile(const std::string& path, Mesh& out, std::string& error) {
@@ -783,9 +784,9 @@ bool loadMeshFile(const std::string& path, Mesh& out, std::string& error) {
     if (ext == ".stl") ok = loadStl(path, out, error);
     else if (ext == ".obj") ok = loadObj(path, out, error);
     else if (ext == ".ply") ok = loadPly(path, out, error);
-    else { error = "Unbekanntes Dateiformat: " + ext; return false; }
+    else { error = tr("Unbekanntes Dateiformat: ") + ext; return false; }
     if (!ok) return false;
-    if (out.indices.empty()) { error = "Die Datei enthält kein Netz"; return false; }
+    if (out.indices.empty()) { error = tr("Die Datei enthält kein Netz"); return false; }
     weldVertices(out); computeNormals(out);
     return true;
 }

@@ -1,4 +1,5 @@
 #include "project.hpp"
+#include "i18n.hpp"
 #include <filesystem>
 #include <algorithm>
 #include <cstdio>
@@ -253,10 +254,10 @@ static constexpr float kFinalMaxWeight = 500.f;
 bool fuseProject(const Project& p, float voxelMm, const MeshOptions& options, Mesh& out, std::string& error, const std::function<void(float)>& progress) {
     size_t total = 0, done = 0; const ScanData* first = nullptr;
     for (const ScanData& s : p.scans) if (s.included) {
-        if (!s.placed) { error = s.name + " ist noch nicht ausgerichtet."; return false; }
+        if (!s.placed) { error = trf("%s ist noch nicht ausgerichtet.", s.name); return false; }
         total += s.frames.size(); if (!first) first = &s;
     }
-    if (!total) { error = "Kein Scan ausgewählt."; return false; }
+    if (!total) { error = tr("Kein Scan ausgewählt."); return false; }
     std::vector<ScanView> views; for (const ScanData& s : p.scans) if (s.included) views.push_back({&s.frames, &s.grid, &s.colorCalib, s.placement});
     std::vector<std::vector<Pose>> polished;
     if (options.cleanUp) { if (progress) progress(0.02f); polishPoses(views, polished, std::max(voxelMm, 0.5f)); }
@@ -274,12 +275,12 @@ bool fuseProject(const Project& p, float voxelMm, const MeshOptions& options, Me
     MeshOptions o = options; o.upright = false;
     o.removeFragments = false;   // only after the clean-up below
     extractMesh(t, o, out);
-    if (out.indices.empty()) { error = "Die Fusion ergibt kein Netz."; return false; }
+    if (out.indices.empty()) { error = tr("Die Fusion ergibt kein Netz."); return false; }
     const float tol = std::max(2.f, voxelMm*2);
     if (options.cleanUp) carveFreeSpace(out, views, tol);
     if (options.removeFragments) removeSmallParts(out, options.minFragmentShare);
     if (options.cleanUp) { computeNormals(out); colorFromFrames(out, views, tol); }
-    if (out.indices.empty()) { error = "Die Fusion ergibt kein Netz."; return false; }
+    if (out.indices.empty()) { error = tr("Die Fusion ergibt kein Netz."); return false; }
     if (options.upright) { orientUpright(out, first->placement.rot(first->up)); computeNormals(out); }
     return true;
 }
@@ -358,7 +359,7 @@ struct In { FILE* f; bool ok = true; uint64_t left;
 }
 bool saveProject(const Project& p, const std::string& path, std::string& error) {
     const std::string tmp = path + ".tmp"; FILE* f = fopen(tmp.c_str(), "wb");
-    if (!f) { error = "Datei kann nicht geschrieben werden: " + path; return false; }
+    if (!f) { error = tr("Datei kann nicht geschrieben werden: ") + path; return false; }
     Out o{f}; o.bytes(kMagic, 8); o.pod((uint64_t)p.scans.size());
     for (const ScanData& s : p.scans) {
         o.str(s.name); o.pod(s.grid.width); o.pod(s.grid.height); o.pod(s.grid.fx); o.pod(s.grid.fy); o.pod(s.grid.cx); o.pod(s.grid.cy);
@@ -367,15 +368,15 @@ bool saveProject(const Project& p, const std::string& path, std::string& error) 
         for (const ScanFrame& fr : s.frames) { o.vec(fr.cells); o.vec(fr.z); o.pod(fr.pose); o.vec(fr.colorJpeg); }
     }
     const bool ok = fclose(f) == 0 && o.ok;
-    if (!ok) { std::remove(tmp.c_str()); error = "Schreibfehler (Festplatte voll?)"; return false; }
+    if (!ok) { std::remove(tmp.c_str()); error = tr("Schreibfehler (Festplatte voll?)"); return false; }
     std::rename(tmp.c_str(), path.c_str());
     return true;
 }
 bool loadProject(Project& p, const std::string& path, std::string& error) {
-    FILE* f = fopen(path.c_str(), "rb"); if (!f) { error = "Datei nicht lesbar: " + path; return false; }
+    FILE* f = fopen(path.c_str(), "rb"); if (!f) { error = tr("Datei nicht lesbar: ") + path; return false; }
     fseek(f, 0, SEEK_END); const uint64_t len = (uint64_t)ftell(f); fseek(f, 0, SEEK_SET);
     In in{f, true, len}; char m[8] = {0}; in.bytes(m, 8);
-    if (!in.ok || memcmp(m, kMagic, 8)) { fclose(f); error = "Das ist keine VoxelForge-Projektdatei."; return false; }
+    if (!in.ok || memcmp(m, kMagic, 8)) { fclose(f); error = tr("Das ist keine VoxelForge-Projektdatei."); return false; }
     Project q; uint64_t n = 0; in.pod(n);
     for (uint64_t i = 0; i < n && in.ok; i++) {
         ScanData s; uint8_t placed = 0, included = 0; uint64_t frames = 0;
@@ -393,7 +394,7 @@ bool loadProject(Project& p, const std::string& path, std::string& error) {
         q.scans.push_back(std::move(s));
     }
     fclose(f);
-    if (!in.ok) { error = "Die Projektdatei ist beschädigt oder abgeschnitten."; return false; }
+    if (!in.ok) { error = tr("Die Projektdatei ist beschädigt oder abgeschnitten."); return false; }
     p = std::move(q);
     return true;
 }

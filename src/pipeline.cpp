@@ -1,4 +1,5 @@
 #include "pipeline.hpp"
+#include "i18n.hpp"
 #include "meshedit.hpp"
 #include <algorithm>
 #include <chrono>
@@ -487,7 +488,7 @@ void Pipeline::rememberFrame(const DepthMap& d, const StereoFrame* f) {
 }
 bool Pipeline::rebuildModel(float voxelMm, std::string& report) {
     std::lock_guard<std::mutex> g(mutex_);
-    if (session_.empty()) { report = sessionBytes_ ? "Der Scan war zu lang, um ihn im Speicher zu behalten" : "Kein Scan im Speicher"; return false; }
+    if (session_.empty()) { report = sessionBytes_ ? tr("Der Scan war zu lang, um ihn im Speicher zu behalten") : tr("Kein Scan im Speicher"); return false; }
     options.voxelMm = voxelMm;
     tsdf_ = std::make_unique<Tsdf>(voxelMm);
     DepthMap d = sessionGrid_; d.z.assign((size_t)d.width*d.height, 0.f);
@@ -500,7 +501,7 @@ bool Pipeline::rebuildModel(float voxelMm, std::string& report) {
     }
     pose_ = session_.back().pose;
     stats_.blocks = tsdf_->blockCount(); stats_.memoryBytes = tsdf_->memoryBytes();
-    char b[120]; snprintf(b, sizeof b, "Neu berechnet mit %.2f mm aus %zu Bildern", voxelMm, session_.size());
+    char b[120]; snprintf(b, sizeof b, tr("Neu berechnet mit %.2f mm aus %zu Bildern"), voxelMm, session_.size());
     report = b;
     return true;
 }

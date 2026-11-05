@@ -5,6 +5,7 @@
 #include <ctime>
 #include <filesystem>
 #include "measure.hpp"
+#include "i18n.hpp"
 #include "projectui.hpp"
 #include "filedialog.hpp"
 #include "settings.hpp"
@@ -70,29 +71,29 @@ bool ProjectUi::commitLive() {
     return true;
 }
 void ProjectUi::panel(bool canAct, int liveFrames, bool canStartTools, bool hasLive) {
-    { const std::string title = hasProject() ? projectName() : std::string("Projekt"); forge::beginCard("##proj", title.c_str(), IC_LAYERS); }
+    { const std::string title = hasProject() ? projectName() : std::string(tr("Projekt")); forge::beginCard("##proj", title.c_str(), IC_LAYERS); }
     const bool free = canStartTools && !jobRunning_;
     if (!project_.scans.empty()) {
         for (size_t i = 0; i < project_.scans.size(); i++) {
             ScanData& s = project_.scans[i]; ImGui::PushID((int)i); const ImVec2 at = ImGui::GetCursorScreenPos(); const float w = ImGui::GetContentRegionAvail().x, h = px(44);
             ImGui::SetNextItemAllowOverlap(); ImGui::BeginDisabled(!free);
             if (ImGui::InvisibleButton("##row", {w-px(70), h})) showReview((int)i);
-            const bool rowHover = ImGui::IsItemHovered(); { char note[80]; snprintf(note, sizeof note, "Zeile %s", s.name.c_str()); forge::noteItem(note); } ImGui::EndDisabled();
-            if (rowHover) ImGui::SetTooltip("Punktwolke dieses Scans ansehen");
+            const bool rowHover = ImGui::IsItemHovered(); { char note[160]; snprintf(note, sizeof note, "Zeile %s", s.name.c_str()); forge::noteItem(note); } ImGui::EndDisabled();
+            if (rowHover) ImGui::SetTooltip(tr("Punktwolke dieses Scans ansehen"));
             ImDrawList* dl = ImGui::GetWindowDrawList(); dl->AddRectFilled(at, {at.x+w, at.y+h}, forge::col(rowHover ? forge::raised : forge::bg), px(9));
             if (reviewScan_ == (int)i) dl->AddRect(at, {at.x+w, at.y+h}, forge::col(forge::sky), px(9), 0, px(1.5f));
             const float* colr = kScanColors[i%6]; dl->AddCircleFilled({at.x+px(14), at.y+h/2}, px(4.5f), forge::col(ImVec4(colr[0], colr[1], colr[2], s.included ? 1.f : .3f)));
             ImGui::PushFont(forge::fontMedium); dl->AddText({at.x+px(28), at.y+px(6)}, forge::col(s.included ? forge::text : forge::textDim), s.name.c_str()); ImGui::PopFont();
-            char sub[64]; snprintf(sub, sizeof sub, "%zu Bilder  ·  %s", s.frames.size(), s.placed ? "ausgerichtet" : "offen"); dl->AddText(forge::fontBody, ImGui::GetFontSize()*.88f, {at.x+px(28), at.y+px(24)}, forge::col(s.placed ? forge::textDim : forge::amber), sub);
+            char sub[160]; snprintf(sub, sizeof sub, tr("%zu Bilder  ·  %s"), s.frames.size(), s.placed ? tr("ausgerichtet") : tr("offen")); dl->AddText(forge::fontBody, ImGui::GetFontSize()*.88f, {at.x+px(28), at.y+px(24)}, forge::col(s.placed ? forge::textDim : forge::amber), sub);
             ImGui::SetCursorScreenPos({at.x+w-px(66), at.y+px(7)}); ImGui::BeginDisabled(!free);
-            char key[32]; snprintf(key, sizeof key, "Sichtbar##%zu", i); if (forge::iconButton(s.included ? IC_EYE : IC_EYE_OFF, key, s.included ? "Gehört zum Modell" : "Gehört nicht zum Modell", false, px(30))) s.included = !s.included;
-            ImGui::SameLine(0, px(2)); snprintf(key, sizeof key, "X##%zu", i); if (forge::iconButton(IC_TRASH_2, key, "Scan entfernen", false, px(30))) { removeIndex_ = (int)i; removeRequest_ = true; }
+            char key[32]; snprintf(key, sizeof key, "Sichtbar##%zu", i); if (forge::iconButton(s.included ? IC_EYE : IC_EYE_OFF, key, s.included ? tr("Gehört zum Modell") : tr("Gehört nicht zum Modell"), false, px(30))) s.included = !s.included;
+            ImGui::SameLine(0, px(2)); snprintf(key, sizeof key, "X##%zu", i); if (forge::iconButton(IC_TRASH_2, key, tr("Scan entfernen"), false, px(30))) { removeIndex_ = (int)i; removeRequest_ = true; }
             ImGui::EndDisabled();
             ImGui::SetCursorScreenPos({at.x, at.y+h+px(5)}); ImGui::Dummy({0, 0}); ImGui::PopID();
         }
-    } else if (!liveFrames) forge::hint("Mehrere Scans aus verschiedenen Lagen werden hier gesammelt und zu einem Modell zusammengeführt.");
+    } else if (!liveFrames) forge::hint(tr("Mehrere Scans aus verschiedenen Lagen werden hier gesammelt und zu einem Modell zusammengeführt."));
     if (liveFrames) {
-        char b[64]; snprintf(b, sizeof b, IC_SCAN_LINE "  Aktueller Scan: %d Bilder", liveFrames);
+        char b[160]; snprintf(b, sizeof b, tr(IC_SCAN_LINE "  Aktueller Scan: %d Bilder"), liveFrames);
         if (forge::toggleButton(b, !reviewing(), {-FLT_MIN, 0})) { reviewScan_ = -1; reviewDirty_ = false; }
         forge::noteItem("Aktueller Scan");
     }
@@ -100,19 +101,19 @@ void ProjectUi::panel(bool canAct, int liveFrames, bool canStartTools, bool hasL
     const float gap = ImGui::GetStyle().ItemSpacing.x, w3 = (ImGui::GetContentRegionAvail().x-2*gap)/3, hb = px(60);
     const size_t total = project_.scans.size()+(hasLive ? 1 : 0);
     ImGui::BeginDisabled(!hasLive && !reviewing());   // already at the live image, with nothing to keep
-    if (forge::toolTile(IC_PLUS, "Neuer Scan", {w3, hb})) newScan(hasLive);
+    if (forge::toolTile(IC_PLUS, tr("Neuer Scan"), {w3, hb})) newScan(hasLive);
     forge::noteItem("Neuer Scan Karte");
     ImGui::EndDisabled(); ImGui::SameLine(0, gap);
     ImGui::BeginDisabled(total < 2);
-    if (forge::toolTile(IC_MOVE_3D, "Ausrichten", {w3, hb})) { if (!hasLive || commitLive()) openAlign(); }
+    if (forge::toolTile(IC_MOVE_3D, tr("Ausrichten"), {w3, hb})) { if (!hasLive || commitLive()) openAlign(); }
     ImGui::EndDisabled(); ImGui::SameLine(0, gap);
     ImGui::BeginDisabled(total < 1 || (project_.scans.empty() && !hasLive));
-    if (forge::toolTile(IC_COMBINE, "Fusion", {w3, hb})) { if (hasLive) commitLive(); openFusion(); }
+    if (forge::toolTile(IC_COMBINE, tr("Fusion"), {w3, hb})) { if (hasLive) commitLive(); openFusion(); }
     ImGui::EndDisabled();
     ImGui::EndDisabled();
     ImGui::BeginDisabled(!canAct || jobRunning_);
     { const float w = (ImGui::GetContentRegionAvail().x-ImGui::GetStyle().ItemSpacing.x)/2;
-      if (forge::button(IC_SAVE "  Speichern##proj", {w, 0})) { if (liveFrames) commitLive(); if (project_.scans.empty()) say("Noch kein Scan im Projekt.", false); else requestSave(); }
+      if (forge::button(IC_SAVE "  Speichern##proj", {w, 0})) { if (liveFrames) commitLive(); if (project_.scans.empty()) say(tr("Noch kein Scan im Projekt."), false); else requestSave(); }
       forge::noteItem("Speichern##proj"); ImGui::SameLine();
       if (forge::button(IC_FOLDER_OPEN "  Öffnen##proj", {w, 0})) requestOpen();
       forge::noteItem("Öffnen##proj"); }
@@ -121,8 +122,8 @@ void ProjectUi::panel(bool canAct, int liveFrames, bool canStartTools, bool hasL
 }
 void ProjectUi::newScan(bool hasLive) {
     if (hasLive) {
-        if (commitLive()) say("Gespeichert als "+project_.scans.back().name+". Objekt umlegen und den nächsten Scan starten.", true);
-        else say("Dieser Scan war zu lang, um ihn im Speicher zu behalten.", false);
+        if (commitLive()) say(trf("Gespeichert als %s. Objekt umlegen und den nächsten Scan starten.", project_.scans.back().name), true);
+        else say(tr("Dieser Scan war zu lang, um ihn im Speicher zu behalten."), false);
     }
     reviewScan_ = -1; reviewDirty_ = false;
 }
@@ -140,11 +141,11 @@ void ProjectUi::updateReview() {
         reviewView_.setUpDirection(d.up); reviewView_.setPointCloud(*d.cloud, true, d.cloudSpacingMm);
     };
     if (s->cloud) upload();
-    else startJob("Punktwolke wird vorbereitet", [s] { buildPointCloud(*s); }, upload);
+    else startJob(tr("Punktwolke wird vorbereitet"), [s] { buildPointCloud(*s); }, upload);
 }
 void ProjectUi::reviewView() {
     const ImVec2 o = ImGui::GetCursorScreenPos(), r{ImGui::GetContentRegionAvail().x-px(10), ImGui::GetContentRegionAvail().y-px(10)};
-    char title[120] = ""; if (reviewScan_ < (int)project_.scans.size() && reviewScan_ >= 0) { const ScanData& s = project_.scans[reviewScan_]; snprintf(title, sizeof title, "%s  ·  %zu Bilder", s.name.c_str(), s.frames.size()); }
+    char title[120] = ""; if (reviewScan_ < (int)project_.scans.size() && reviewScan_ >= 0) { const ScanData& s = project_.scans[reviewScan_]; snprintf(title, sizeof title, tr("%s  ·  %zu Bilder"), s.name.c_str(), s.frames.size()); }
     oneView(reviewView_, r, title, nullptr, nullptr);
     const float barW = px(220), barH = px(60); forge::beginFloating("##reviewbar", {o.x+(r.x-barW)/2, o.y+r.y-barH-px(16)}, {barW, barH});
     ImGui::SetCursorPos({px(7), px(7)}); ImGui::BeginDisabled(jobRunning_);
@@ -157,7 +158,7 @@ std::string ProjectUi::projectName() const { return std::filesystem::path(path_)
 void ProjectUi::closeProject() { project_ = Project{}; path_[0] = 0; dirty_ = false; reviewScan_ = -1; reviewDirty_ = false; closeAlign(); }
 bool ProjectUi::createProject(const std::string& file, std::string& error) {
     std::error_code ec; std::filesystem::create_directories(std::filesystem::path(file).parent_path(), ec);
-    if (ec) { error = "Der Ordner lässt sich nicht anlegen: "+ec.message(); return false; }
+    if (ec) { error = tr("Der Ordner lässt sich nicht anlegen: ")+ec.message(); return false; }
     Project empty; if (!saveProject(empty, file, error)) return false;
     project_ = Project{}; dirty_ = false; reviewScan_ = -1; reviewDirty_ = false; closeAlign(); snprintf(path_, sizeof path_, "%s", file.c_str());
     if (onFileChanged) onFileChanged(file);
@@ -165,28 +166,28 @@ bool ProjectUi::createProject(const std::string& file, std::string& error) {
 }
 void ProjectUi::requestSave() {
     const std::string start = hasProject() ? std::string(path_) : defaultFolder+"/projekt.vfproj";
-    filedialog::request(filedialog::Kind::Save, "Projekt speichern", start, {{"VoxelForge-Projekt", {"vfproj"}}}, [this](const std::string& f) { saveTo(f); });
+    filedialog::request(filedialog::Kind::Save, tr("Projekt speichern"), start, {{tr("VoxelForge-Projekt"), {"vfproj"}}}, [this](const std::string& f) { saveTo(f); });
 }
 void ProjectUi::requestOpen() {
-    filedialog::request(filedialog::Kind::Open, "Projekt öffnen", hasProject() ? std::string(path_) : defaultFolder, {{"VoxelForge-Projekt", {"vfproj"}}}, [this](const std::string& f) { loadFile(f); });
+    filedialog::request(filedialog::Kind::Open, tr("Projekt öffnen"), hasProject() ? std::string(path_) : defaultFolder, {{tr("VoxelForge-Projekt"), {"vfproj"}}}, [this](const std::string& f) { loadFile(f); });
 }
 void ProjectUi::saveTo(const std::string& file) {
     auto error = std::make_shared<std::string>(); auto ok = std::make_shared<bool>(false);
     // The finished model makes the best picture. Copied now, as it may change while this runs.
     std::shared_ptr<Mesh> model; if (edit_.hasMesh()) model = std::make_shared<Mesh>(edit_.mesh());
     std::error_code ec; std::filesystem::create_directories(std::filesystem::path(file).parent_path(), ec);
-    startJob("Projekt wird gespeichert", [this, file, error, ok, model] {
+    startJob(tr("Projekt wird gespeichert"), [this, file, error, ok, model] {
         *ok = saveProject(project_, file, *error);
         if (*ok) { const std::string thumb = thumbnailFile(file); if (!model || !writeThumbnail(*model, V3{0, 0, 1}, thumb)) writeProjectThumbnail(project_, thumb); }
     }, [this, file, error, ok] {
-        if (*ok) { snprintf(path_, sizeof path_, "%s", file.c_str()); dirty_ = false; say("Gespeichert: "+std::filesystem::path(file).filename().string(), true); if (onFileChanged) onFileChanged(file); }
+        if (*ok) { snprintf(path_, sizeof path_, "%s", file.c_str()); dirty_ = false; say(tr("Gespeichert: ")+std::filesystem::path(file).filename().string(), true); if (onFileChanged) onFileChanged(file); }
         else say(*error, false);
     });
 }
 bool ProjectUi::loadFile(const std::string& path) {
     auto loaded = std::make_shared<Project>(); auto error = std::make_shared<std::string>(); auto ok = std::make_shared<bool>(false);
-    startJob("Projekt wird geladen", [path, loaded, error, ok] { *ok = loadProject(*loaded, path, *error); }, [this, path, loaded, error, ok] {
-        if (*ok) { project_ = std::move(*loaded); dirty_ = false; closeAlign(); reviewLast(); snprintf(path_, sizeof path_, "%s", path.c_str()); say("Geöffnet: "+std::filesystem::path(path).stem().string(), true); if (onFileChanged) onFileChanged(path); }
+    startJob(tr("Projekt wird geladen"), [path, loaded, error, ok] { *ok = loadProject(*loaded, path, *error); }, [this, path, loaded, error, ok] {
+        if (*ok) { project_ = std::move(*loaded); dirty_ = false; closeAlign(); reviewLast(); snprintf(path_, sizeof path_, "%s", path.c_str()); say(tr("Geöffnet: ")+std::filesystem::path(path).stem().string(), true); if (onFileChanged) onFileChanged(path); }
         else say(*error, false);
     });
     return true;
@@ -195,8 +196,8 @@ void ProjectUi::removeDialog() {
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, {px(20), px(18)}); ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, px(16)); ImGui::PushStyleColor(ImGuiCol_PopupBg, forge::surface);
     const bool open = ImGui::BeginPopupModal("Scan entfernen", nullptr, ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoTitleBar);
     if (open) {
-        ImGui::PushFont(forge::fontTitle); ImGui::TextUnformatted("Scan entfernen?"); ImGui::PopFont();
-        if (removeIndex_ >= 0 && (size_t)removeIndex_ < project_.scans.size()) { ImGui::PushStyleColor(ImGuiCol_Text, forge::textDim); ImGui::Text("%s wird aus dem Projekt entfernt. Das lässt sich nicht rückgängig machen.", project_.scans[removeIndex_].name.c_str()); ImGui::PopStyleColor(); }
+        ImGui::PushFont(forge::fontTitle); ImGui::TextUnformatted(tr("Scan entfernen?")); ImGui::PopFont();
+        if (removeIndex_ >= 0 && (size_t)removeIndex_ < project_.scans.size()) { ImGui::PushStyleColor(ImGuiCol_Text, forge::textDim); ImGui::Text(tr("%s wird aus dem Projekt entfernt. Das lässt sich nicht rückgängig machen."), project_.scans[removeIndex_].name.c_str()); ImGui::PopStyleColor(); }
         ImGui::Dummy({0, px(4)});
         if (forge::button("Abbrechen##rm", {px(170), px(36)})) ImGui::CloseCurrentPopup();
         ImGui::SameLine();
@@ -217,7 +218,7 @@ void ProjectUi::removeScan(size_t i) {
 void ProjectUi::openAlign() {
     aligning_ = true; hasResult_ = false; proposals_.clear(); chosen_.assign(project_.scans.size(), 1); message.clear();
     fixedPoints_.clear(); movingPoints_.clear(); fixedScan_ = 0; movingScan_ = project_.scans.size() > 1 ? 1 : 0;
-    startJob("Scans werden vorbereitet", [this] {
+    startJob(tr("Scans werden vorbereitet"), [this] {
         const size_t n = project_.scans.size();
         #pragma omp parallel for schedule(dynamic)
         for (size_t i = 0; i < n; i++) buildOverview(project_.scans[i]);
@@ -267,12 +268,12 @@ void ProjectUi::showManualViews() {
 }
 void ProjectUi::runAuto() {
     std::vector<size_t> use; for (size_t i = 0; i < chosen_.size(); i++) if (chosen_[i]) use.push_back(i);
-    if (use.size() < 2) { say("Mindestens zwei Scans auswählen.", false); return; }
+    if (use.size() < 2) { say(tr("Mindestens zwei Scans auswählen."), false); return; }
     // A placed scan stays where it is and serves as the reference. Otherwise the first one does.
     size_t ref = use[0]; for (size_t i : use) if (project_.scans[i].placed) { ref = i; break; }
     reference_ = ref; message.clear(); const bool markers = byMarkers_;
     auto result = std::make_shared<std::map<size_t, Proposal>>(); auto failed = std::make_shared<std::string>();
-    startJob(markers ? "Ausrichten über Marker" : "Ausrichten über Merkmale", [this, use, ref, markers, result, failed] {
+    startJob(markers ? tr("Ausrichten über Marker") : tr("Ausrichten über Merkmale"), [this, use, ref, markers, result, failed] {
         Mesh merged; std::vector<V3> mapMerged;
         const Pose refPose = project_.scans[ref].placed ? project_.scans[ref].placement : Pose{};
         { const float none[3] = {0, 0, 0}; appendMesh(merged, *project_.scans[ref].overview, refPose, none); merged.colors.clear(); computeNormals(merged); }
@@ -283,12 +284,12 @@ void ProjectUi::runAuto() {
             const ScanData& s = project_.scans[i]; Proposal pr; Mesh src = *s.overview; src.colors.clear(); computeNormals(src);
             if (markers) {
                 Pose P; int matched = 0;
-                if (!registerMarkers(s.markers, mapMerged, P, matched)) { *failed = s.name + ": zu wenige gemeinsame Marker. Merkmale oder Manuell versuchen."; return; }
+                if (!registerMarkers(s.markers, mapMerged, P, matched)) { *failed = trf("%s: zu wenige gemeinsame Marker. Merkmale oder Manuell versuchen.", s.name); return; }
                 pr.fromMarkers = P; pr.markers = matched;
                 const RegisterResult fine = refineRegistration(src, merged, P, 3.f); if (fine.ok && fine.overlap > 0.1f) { RegisterResult f = fine; f.confident = matched >= 5; pr.options.push_back(f); }
             } else {
                 pr.options = registerAuto(src, merged, [this, done, &use](float f) { jobProgress_ = (done+f)/(use.size()-1); });
-                if (pr.options.empty()) { *failed = s.name + ": keine passende Lage gefunden. Überlappen sich die Scans genug? Sonst Manuell versuchen."; return; }
+                if (pr.options.empty()) { *failed = trf("%s: keine passende Lage gefunden. Überlappen sich die Scans genug? Sonst Manuell versuchen.", s.name); return; }
             }
             const Pose P = pr.options.empty() ? pr.fromMarkers : pr.options[0].srcToDst;
             // Later scans can also align to this one.
@@ -302,14 +303,14 @@ void ProjectUi::runAuto() {
     });
 }
 void ProjectUi::runManual() {
-    if (fixedScan_ == movingScan_) { say("Zwei verschiedene Scans wählen.", false); return; }
-    if (fixedPoints_.size() != movingPoints_.size() || fixedPoints_.size() < 3) { say("Mindestens drei Punktpaare setzen.", false); return; }
+    if (fixedScan_ == movingScan_) { say(tr("Zwei verschiedene Scans wählen."), false); return; }
+    if (fixedPoints_.size() != movingPoints_.size() || fixedPoints_.size() < 3) { say(tr("Mindestens drei Punktpaare setzen."), false); return; }
     std::vector<V3> dst; const ScanData& fix = project_.scans[fixedScan_]; const Pose fp = fix.placed ? fix.placement : Pose{};
     for (const V3& p : fixedPoints_) dst.push_back(fp.apply(p));
-    Pose P; if (!registerPointPairs(movingPoints_, dst, P)) { say("Die Punkte liegen auf einer Linie. Weiter verteilt setzen.", false); return; }
+    Pose P; if (!registerPointPairs(movingPoints_, dst, P)) { say(tr("Die Punkte liegen auf einer Linie. Weiter verteilt setzen."), false); return; }
     message.clear(); const size_t mov = (size_t)movingScan_, fx = (size_t)fixedScan_; reference_ = fx;
     auto pr = std::make_shared<Proposal>();
-    startJob("Feinausrichtung", [this, P, pr, mov, fx, fp] {
+    startJob(tr("Feinausrichtung"), [this, P, pr, mov, fx, fp] {
         Mesh src = *project_.scans[mov].overview, dstM; src.colors.clear(); computeNormals(src);
         const float none[3] = {0, 0, 0}; appendMesh(dstM, *project_.scans[fx].overview, fp, none); dstM.colors.clear(); computeNormals(dstM);
         pr->fromMarkers = P;
@@ -323,22 +324,22 @@ void ProjectUi::acceptAlign() {
     dirty_ = true;
     for (auto& e : proposals_) { ScanData& s = project_.scans[e.first]; s.placement = proposedPlacement(e.first); s.placed = true; }
     if (reference_ < project_.scans.size()) project_.scans[reference_].placed = true;
-    say("Ausrichtung übernommen. Jetzt Fusion starten.", true);
+    say(tr("Ausrichtung übernommen. Jetzt Fusion starten."), true);
     closeAlign();
 }
 void ProjectUi::alignPanel() {
     forge::beginCard("##align");
-    if (forge::iconButton(IC_CHEVRON_LEFT, "Zurück zum Scan", "Zurück", false, px(30))) { closeAlign(); forge::endCard(); return; }
-    ImGui::SameLine(0, px(6)); ImGui::PushFont(forge::fontTitle); ImGui::SetCursorPosY(ImGui::GetCursorPosY()+px(6)); ImGui::TextUnformatted("Ausrichten"); ImGui::PopFont();
+    if (forge::iconButton(IC_CHEVRON_LEFT, tr("Zurück zum Scan"), tr("Zurück"), false, px(30))) { closeAlign(); forge::endCard(); return; }
+    ImGui::SameLine(0, px(6)); ImGui::PushFont(forge::fontTitle); ImGui::SetCursorPosY(ImGui::GetCursorPosY()+px(6)); ImGui::TextUnformatted(tr("Ausrichten")); ImGui::PopFont();
     ImGui::BeginDisabled(jobRunning_);
-    int kind = byMarkers_ ? 1 : 0; const char* const kinds[] = {"Merkmale", "Marker"};
+    int kind = byMarkers_ ? 1 : 0; const char* const kinds[] = {tr("Merkmale"), tr("Marker")};
     if (forge::segmented("kind", kind, kinds, 2)) { byMarkers_ = kind == 1; hasResult_ = false; proposals_.clear(); showPreview(false); }
-    int how = manual_ ? 1 : 0; const char* const hows[] = {"Auto", "Manuell"};
+    int how = manual_ ? 1 : 0; const char* const hows[] = {tr("Auto"), tr("Manuell")};
     if (forge::segmented("how", how, hows, 2)) { manual_ = how == 1; hasResult_ = false; proposals_.clear(); fixedPoints_.clear(); movingPoints_.clear(); chosen_.assign(project_.scans.size(), 1); message.clear(); if (manual_) showManualViews(); else showPreview(true); }
     ImGui::EndDisabled();
-    if (byMarkers_ && !manual_) forge::hint("Nur wenn das Objekt zu den Markern gleich liegt. Wurde es auf dem Drehteller umgelegt, Merkmale nehmen.");
+    if (byMarkers_ && !manual_) forge::hint(tr("Nur wenn das Objekt zu den Markern gleich liegt. Wurde es auf dem Drehteller umgelegt, Merkmale nehmen."));
     if (!manual_) {
-        forge::hint("Liegen die Scans richtig, mischen sich ihre Farben fein. Große einfarbige Flächen bedeuten eine falsche Lage.");
+        forge::hint(tr("Liegen die Scans richtig, mischen sich ihre Farben fein. Große einfarbige Flächen bedeuten eine falsche Lage."));
         ImGui::BeginDisabled(jobRunning_ || hasResult_);
         for (size_t i = 0; i < project_.scans.size() && i < chosen_.size(); i++) {
             bool c = chosen_[i] != 0; const float* col = kScanColors[i%6]; const ImVec2 at = ImGui::GetCursorScreenPos();
@@ -351,17 +352,17 @@ void ProjectUi::alignPanel() {
                 Proposal& p = e.second; ImGui::PushID((int)e.first);
                 ImGui::PushFont(forge::fontMedium); ImGui::TextUnformatted(project_.scans[e.first].name.c_str()); ImGui::PopFont();
                 if (!p.options.empty()) {
-                    const RegisterResult& r = p.options[p.current]; char b[48];
-                    snprintf(b, sizeof b, "%.0f %%", 100*r.overlap); forge::labelValue("Überlappung", b); snprintf(b, sizeof b, "%.2f mm", r.rmsMm); forge::labelValue("Abstand", b);
-                    if (r.confident) forge::chip("Eindeutig", forge::green, IC_CIRCLE_CHECK); else forge::chip("Nicht sicher, bitte prüfen", forge::amber, IC_TRIANGLE_ALERT);
+                    const RegisterResult& r = p.options[p.current]; char b[160];
+                    snprintf(b, sizeof b, "%.0f %%", 100*r.overlap); forge::labelValue(tr("Überlappung"), b); snprintf(b, sizeof b, "%.2f mm", r.rmsMm); forge::labelValue(tr("Abstand"), b);
+                    if (r.confident) forge::chip(tr("Eindeutig"), forge::green, IC_CIRCLE_CHECK); else forge::chip(tr("Nicht sicher, bitte prüfen"), forge::amber, IC_TRIANGLE_ALERT);
                     if (p.options.size() > 1) {
-                        char label[64]; snprintf(label, sizeof label, IC_ARROW_RIGHT "  Nächster Vorschlag (%zu von %zu)", p.current+1, p.options.size());
+                        char label[64]; snprintf(label, sizeof label, tr(IC_ARROW_RIGHT "  Nächster Vorschlag (%zu von %zu)"), p.current+1, p.options.size());
                         ImGui::BeginDisabled(jobRunning_);
                         if (forge::button(label, {-FLT_MIN, 0})) { p.current = (p.current+1)%p.options.size(); showPreview(false); }
                         forge::noteItem("Nächster Vorschlag");
                         ImGui::EndDisabled();
                     }
-                } else if (p.markers) { char b[48]; snprintf(b, sizeof b, "%d", p.markers); forge::labelValue("Gemeinsame Marker", b); }
+                } else if (p.markers) { char b[160]; snprintf(b, sizeof b, "%d", p.markers); forge::labelValue(tr("Gemeinsame Marker"), b); }
                 ImGui::PopID();
             }
         }
@@ -369,17 +370,17 @@ void ProjectUi::alignPanel() {
         std::vector<const char*> names; for (const ScanData& s : project_.scans) names.push_back(s.name.c_str());
         ImGui::BeginDisabled(jobRunning_);
         bool ch = false;
-        ch |= forge::combo("Bleibt liegen", &fixedScan_, names.data(), (int)names.size());
-        ch |= forge::combo("Wird bewegt", &movingScan_, names.data(), (int)names.size());
+        ch |= forge::combo(tr("Bleibt liegen"), &fixedScan_, names.data(), (int)names.size());
+        ch |= forge::combo(tr("Wird bewegt"), &movingScan_, names.data(), (int)names.size());
         if (ch) { fixedPoints_.clear(); movingPoints_.clear(); hasResult_ = false; proposals_.clear(); showManualViews(); }
         ImGui::EndDisabled();
-        forge::hint("Abwechselnd dieselbe Stelle in beiden Bildern anklicken, mindestens drei weit verteilte Paare.");
-        char b[80]; snprintf(b, sizeof b, "%zu links, %zu rechts", fixedPoints_.size(), movingPoints_.size()); forge::labelValue("Punkte", b);
+        forge::hint(tr("Abwechselnd dieselbe Stelle in beiden Bildern anklicken, mindestens drei weit verteilte Paare."));
+        char b[160]; snprintf(b, sizeof b, tr("%zu links, %zu rechts"), fixedPoints_.size(), movingPoints_.size()); forge::labelValue(tr("Punkte"), b);
         ImGui::BeginDisabled(jobRunning_ || (fixedPoints_.empty() && movingPoints_.empty()));
         if (forge::button(IC_UNDO_2 "  Letzten Punkt entfernen##p", {-FLT_MIN, 0})) { if (fixedPoints_.size() > movingPoints_.size()) fixedPoints_.pop_back(); else if (!movingPoints_.empty()) movingPoints_.pop_back(); else if (!fixedPoints_.empty()) fixedPoints_.pop_back(); message.clear(); }
         forge::noteItem("Letzten Punkt entfernen");
         ImGui::EndDisabled();
-        if (hasResult_) for (auto& e : proposals_) if (!e.second.options.empty()) { const RegisterResult& r = e.second.options[0]; snprintf(b, sizeof b, "%.0f %%", 100*r.overlap); forge::labelValue("Überlappung", b); snprintf(b, sizeof b, "%.2f mm", r.rmsMm); forge::labelValue("Abstand", b); }
+        if (hasResult_) for (auto& e : proposals_) if (!e.second.options.empty()) { const RegisterResult& r = e.second.options[0]; snprintf(b, sizeof b, "%.0f %%", 100*r.overlap); forge::labelValue(tr("Überlappung"), b); snprintf(b, sizeof b, "%.2f mm", r.rmsMm); forge::labelValue(tr("Abstand"), b); }
     }
     const float gap = ImGui::GetStyle().ItemSpacing.x, w = ImGui::GetContentRegionAvail().x, h = px(38);
     ImGui::BeginDisabled(jobRunning_);
@@ -432,7 +433,7 @@ void ProjectUi::alignView() {
     if (manual_ && !hasResult_) {
         const ScanData* a = (size_t)fixedScan_ < project_.scans.size() ? &project_.scans[fixedScan_] : nullptr; const ScanData* b = (size_t)movingScan_ < project_.scans.size() ? &project_.scans[movingScan_] : nullptr;
         if (a && b && a->overview && b->overview) {
-            const float w = (avail.x-px(8))/2; const std::string ta = a->name+" bleibt liegen", tb = b->name+" wird bewegt";
+            const float w = (avail.x-px(8))/2; const std::string ta = trf("%s bleibt liegen", a->name), tb = trf("%s wird bewegt", b->name);
             oneView(view_, {w, avail.y}, ta.c_str(), a->overview.get(), &fixedPoints_);
             ImGui::SameLine(0, px(8));
             oneView(viewB_, {w, avail.y}, tb.c_str(), b->overview.get(), &movingPoints_);
@@ -446,26 +447,26 @@ void ProjectUi::fusionDialog() {
     const ImVec2 c = ImGui::GetMainViewport()->GetCenter(); ImGui::SetNextWindowPos(c, ImGuiCond_Appearing, {.5f, .5f}); ImGui::SetNextWindowSize({px(520), 0});
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, {px(20), px(18)}); ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, px(16)); ImGui::PushStyleColor(ImGuiCol_PopupBg, forge::surface);
     if (!ImGui::BeginPopupModal("Fusion-Batch-Prozess", nullptr, ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoTitleBar)) { ImGui::PopStyleVar(2); ImGui::PopStyleColor(); return; }
-    ImGui::PushFont(forge::fontTitle); ImGui::PushStyleColor(ImGuiCol_Text, forge::sky); ImGui::TextUnformatted(IC_COMBINE); ImGui::PopStyleColor(); ImGui::SameLine(0, px(8)); ImGui::TextUnformatted("Fusion"); ImGui::PopFont();
-    forge::hint("Verschmilzt die gewählten Scans zu einer einzigen Oberfläche.");
+    ImGui::PushFont(forge::fontTitle); ImGui::PushStyleColor(ImGuiCol_Text, forge::sky); ImGui::TextUnformatted(IC_COMBINE); ImGui::PopStyleColor(); ImGui::SameLine(0, px(8)); ImGui::TextUnformatted(tr("Fusion")); ImGui::PopFont();
+    forge::hint(tr("Verschmilzt die gewählten Scans zu einer einzigen Oberfläche."));
     bool blocked = false, any = false;
     forge::beginCard("##fuslist");
     for (size_t i = 0; i < project_.scans.size(); i++) {
-        ScanData& s = project_.scans[i]; ImGui::PushID((int)i); char label[96]; snprintf(label, sizeof label, "%s  ·  %zu Bilder  ·  %s", s.name.c_str(), s.frames.size(), s.placed ? "ausgerichtet" : "offen");
+        ScanData& s = project_.scans[i]; ImGui::PushID((int)i); char label[96]; snprintf(label, sizeof label, tr("%s  ·  %zu Bilder  ·  %s"), s.name.c_str(), s.frames.size(), s.placed ? tr("ausgerichtet") : tr("offen"));
         forge::toggle(label, &s.included);
         if (s.included) { any = true; blocked |= !s.placed; }
         ImGui::PopID();
     }
     forge::endCard();
     forge::beginCard("##fusset");
-    forge::combo("Auflösung", &fusionVoxel_, kVoxelNames, 4);
-    forge::sliderInt("Rauschunterdrückung", &fusionNoise_, 0, 100, "%d %%");
-    forge::toggle("Kleine Teile behalten", &fusionKeepParts_);
-    forge::toggle("Bereinigen, fein ausrichten, beste Farbe", &fusionClean_);
-    if (ImGui::IsItemHovered()) ImGui::SetTooltip("Entfernt Fläche, durch die eine Kamera hindurchgesehen hat, etwa Stützen oder Fetzen.\nAusschalten, falls echte Teile des Objekts fehlen.");
+    forge::combo(tr("Auflösung"), &fusionVoxel_, kVoxelNames, 4);
+    forge::sliderInt(tr("Rauschunterdrückung"), &fusionNoise_, 0, 100, "%d %%");
+    forge::toggle(tr("Kleine Teile behalten"), &fusionKeepParts_);
+    forge::toggle(tr("Bereinigen, fein ausrichten, beste Farbe"), &fusionClean_);
+    if (ImGui::IsItemHovered()) ImGui::SetTooltip(tr("Entfernt Fläche, durch die eine Kamera hindurchgesehen hat, etwa Stützen oder Fetzen.\nAusschalten, falls echte Teile des Objekts fehlen."));
     forge::endCard();
     if (blocked) {
-        forge::chip("Offene Scans erst ausrichten oder abwählen", forge::amber, IC_TRIANGLE_ALERT);
+        forge::chip(tr("Offene Scans erst ausrichten oder abwählen"), forge::amber, IC_TRIANGLE_ALERT);
         if (forge::button(IC_MOVE_3D "  Jetzt ausrichten##fus", {-FLT_MIN, 0})) { ImGui::CloseCurrentPopup(); openAlign(); }
         forge::noteItem("Jetzt ausrichten");
     }
@@ -482,7 +483,7 @@ void ProjectUi::startFusion() {
     const float voxel = kVoxels[fusionVoxel_]; const int minWeight = 1+(fusionNoise_*7+50)/100; const bool keep = fusionKeepParts_, clean = fusionClean_;
     auto out = std::make_shared<Mesh>(); auto error = std::make_shared<std::string>(); auto ok = std::make_shared<bool>(false);
     message.clear();
-    startJob("Fusion", [this, voxel, minWeight, keep, clean, out, error, ok] {
+    startJob(tr("Fusion"), [this, voxel, minWeight, keep, clean, out, error, ok] {
         MeshOptions o; o.minWeight = minWeight; o.removeFragments = !keep; o.cleanUp = clean; o.fillHolesMm = 0; o.keepTriangles = 1; o.upright = true;
         *ok = fuseProject(project_, voxel, o, *out, *error, [this](float f) { jobProgress_ = f; });
         if (*ok) repairManifold(*out);
@@ -492,13 +493,13 @@ bool ProjectUi::buildMerged(float voxelMm, int minWeight, bool keepAllParts, Mes
     // Runs in a worker thread, with the scan tab locked by the caller.
     std::vector<size_t> open; size_t ref = project_.scans.size();
     for (size_t i = 0; i < project_.scans.size(); i++) { ScanData& s = project_.scans[i]; if (!s.included) continue; buildOverview(s); if (s.placed && ref == project_.scans.size()) ref = i; else if (!s.placed) open.push_back(i); }
-    if (ref == project_.scans.size()) { error = "Kein ausgerichteter Scan ausgewählt."; return false; }
+    if (ref == project_.scans.size()) { error = tr("Kein ausgerichteter Scan ausgewählt."); return false; }
     Mesh merged; { const float none[3] = {0, 0, 0}; appendMesh(merged, *project_.scans[ref].overview, project_.scans[ref].placement, none); merged.colors.clear(); computeNormals(merged); }
     for (size_t i : open) {
         ScanData& s = project_.scans[i]; Mesh src = *s.overview; src.colors.clear(); computeNormals(src);
         const auto res = registerAuto(src, merged);
         // One click must not fuse a guess: a wrong placement would ruin the whole model without anyone noticing.
-        if (res.empty() || !res[0].confident) { error = s.name + " lässt sich nicht sicher ausrichten. Bitte das Werkzeug Ausrichten benutzen und das Ergebnis prüfen."; return false; }
+        if (res.empty() || !res[0].confident) { error = trf("%s lässt sich nicht sicher ausrichten. Bitte das Werkzeug Ausrichten benutzen und das Ergebnis prüfen.", s.name); return false; }
         s.placement = res[0].srcToDst; s.placed = true;
         const float none[3] = {0, 0, 0}; appendMesh(merged, *s.overview, s.placement, none); merged.colors.clear(); computeNormals(merged);
     }

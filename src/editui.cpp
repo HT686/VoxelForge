@@ -6,6 +6,7 @@
 #include <ctime>
 #include <filesystem>
 #include "editui.hpp"
+#include "i18n.hpp"
 #include "filedialog.hpp"
 #include "theme.hpp"
 
@@ -18,10 +19,10 @@ const float kVoxels[] = {0.15f, 0.25f, 0.5f, 1.f};
 const char* const kVoxelNames[] = {"0,15 mm", "0,25 mm", "0,5 mm", "1 mm"};
 std::string grouped(size_t n) {
     std::string s = std::to_string(n);
-    for (int i = (int)s.size()-3; i > 0; i -= 3) s.insert((size_t)i, ".");
+    for (int i = (int)s.size()-3; i > 0; i -= 3) s.insert((size_t)i, language() == Language::English ? "," : language() == Language::French ? " " : ".");
     return s;
 }
-std::string holesText(size_t n) { return n == 1 ? "1 Loch" : std::to_string(n) + " Löcher"; }
+std::string holesText(size_t n) { return n == 1 ? std::string(tr("1 Loch")) : trf("%s Löcher", std::to_string(n)); }
 std::string outputBase(float voxelMm) {
     const char* home = getenv("HOME"); std::string base = home ? home : ".";
     for (const char* d : {"/Dokumente", "/Documents"}) if (std::filesystem::is_directory(base + d)) { base += d; break; }
@@ -64,7 +65,7 @@ void EditUi::frame() {
     }
     if (!jobRunning_ && analysisDirty_ && hasMesh()) {
         analysisDirty_ = false; analysisRunning_ = true;
-        startJob("Netz wird geprüft", [this] { jobHoles_ = findHoles(base_); }, [this] {
+        startJob(tr("Netz wird geprüft"), [this] { jobHoles_ = findHoles(base_); }, [this] {
             holes_ = std::move(jobHoles_); analysisRunning_ = false; openEdges_ = 0; for (const MeshHole& h : holes_) openEdges_ += h.loop.size();
             holeChosen_.assign(holes_.size(), 0); holeFilled_.assign(holes_.size(), 0); holeHover_ = -1; linesDirty_ = true;
             holeLimit_ = std::max(holeLimit_, 1.f);
@@ -105,15 +106,15 @@ void EditUi::clear() { Mesh none; base_ = std::move(none); preview_ = Mesh{}; ha
 void EditUi::exportForPrint(std::function<void(const std::string&)> open) {
     if (!hasMesh() || jobRunning_) return;
     if (!*outPath_) updateOutPath(voxelMm_);
-    const std::string file = (outputBase_.empty() ? std::string(outPath_) : outputBase_)+"_3d-druck.stl";
+    const std::string file = (outputBase_.empty() ? std::string(outPath_) : outputBase_)+tr("_3d-druck.stl");
     auto ok = std::make_shared<bool>(false); auto err = std::make_shared<std::string>();
-    startJob("Modell für den 3D-Druck wird geschrieben", [this, file, ok, err] { std::error_code ec; std::filesystem::create_directories(std::filesystem::path(file).parent_path(), ec); *ok = saveMesh(base_, file, *err); }, [file, ok, err, open] { if (*ok) open(file); else forge::toast(*err, forge::Toast::Error); });
+    startJob(tr("Modell für den 3D-Druck wird geschrieben"), [this, file, ok, err] { std::error_code ec; std::filesystem::create_directories(std::filesystem::path(file).parent_path(), ec); *ok = saveMesh(base_, file, *err); }, [file, ok, err, open] { if (*ok) open(file); else forge::toast(*err, forge::Toast::Error); });
 }
 void EditUi::newMesh(Mesh&& m, float voxelMm) {
     base_ = std::move(m); voxelMm_ = voxelMm; history_.clear(); hasPreview_ = false; firstFilling_ = 0; tool_ = EditTool::None; select_ = SelectMode::None; measurePoints_.clear();
     updateOutPath(voxelMm);
     meshChanged(true);
-    if (colorsExpected && colorsExpected() && base_.colors.empty()) forge::toast("Zu wenig Licht für Farbe. Das Modell ist ohne Farbe. Für Farbe den Raum heller machen und neu scannen.", forge::Toast::Warning);
+    if (colorsExpected && colorsExpected() && base_.colors.empty()) forge::toast(tr("Zu wenig Licht für Farbe. Das Modell ist ohne Farbe. Für Farbe den Raum heller machen und neu scannen."), forge::Toast::Warning);
     if (onMeshArrived) onMeshArrived();
 }
 bool EditUi::loadFile(const std::string& path) {
@@ -153,38 +154,38 @@ bool EditUi::footer(const std::function<void()>& preview, const std::function<vo
     if (!hasPreview_) {
         if (forge::primaryButton(IC_EYE "  Vorschau##f", {-FLT_MIN, h})) preview();
         forge::noteItem("Vorschau");
-        if (forge::button("Zurücksetzen", {(w-gap)/2, 0})) reset();
-        ImGui::SameLine(); if (forge::button("Abbrechen", {(w-gap)/2, 0})) { chooseTool(tool_); left = true; }
+        if (forge::button(tr("Zurücksetzen"), {(w-gap)/2, 0})) reset();
+        ImGui::SameLine(); if (forge::button(tr("Abbrechen"), {(w-gap)/2, 0})) { chooseTool(tool_); left = true; }
     } else {
         if (forge::primaryButton(IC_CHECK "  Bestätigen##f", {-FLT_MIN, h})) confirmPreview();
         forge::noteItem("Bestätigen");
-        if (forge::button("Abbrechen", {-FLT_MIN, 0})) dropPreview();
+        if (forge::button(tr("Abbrechen"), {-FLT_MIN, 0})) dropPreview();
     }
     ImGui::EndDisabled();
     return left;
 }
 void EditUi::toolHeader(const char* title, const char* text) {
-    if (forge::iconButton(IC_CHEVRON_LEFT, "Zurück zu Werkzeugen", "Zurück", false, px(30))) { const EditTool t = tool_; chooseTool(t); }
+    if (forge::iconButton(IC_CHEVRON_LEFT, tr("Zurück zu Werkzeugen"), tr("Zurück"), false, px(30))) { const EditTool t = tool_; chooseTool(t); }
     ImGui::SameLine(0, px(6)); ImGui::PushFont(forge::fontTitle); ImGui::SetCursorPosY(ImGui::GetCursorPosY()+px(6)); ImGui::TextUnformatted(title); ImGui::PopFont();
     if (text) forge::hint(text);
     ImGui::Dummy({0, px(2)});
 }
 void EditUi::panel() {
     if (tool_ == EditTool::None) {
-        forge::beginCard("##tools", "Werkzeuge", IC_BOXES);
+        forge::beginCard("##tools", tr("Werkzeuge"), IC_BOXES);
         ImGui::BeginDisabled(!hasMesh() || jobRunning_);
         const float gap = px(8), w = (ImGui::GetContentRegionAvail().x-gap)/2, h = px(70);
         auto tile = [&](const char* icon, const char* label, EditTool t, bool sameLine) { if (forge::toolTile(icon, label, {w, h}, tool_ == t)) chooseTool(t); if (sameLine) ImGui::SameLine(0, gap); };
-        tile(IC_TRIANGLE, "Vereinfachen", EditTool::Simplify, true); tile(IC_WAVES, "Glätten", EditTool::Smooth, false);
-        tile(IC_BRUSH, "Bereinigen", EditTool::Clean, true); tile(IC_CIRCLE_DASHED, "Lochfüllung", EditTool::Holes, false);
-        tile(IC_ROTATE_3D, "Modell ausrichten", EditTool::Align, true); tile(IC_SCISSORS, "Schnittebene", EditTool::Cut, false);
+        tile(IC_TRIANGLE, tr("Vereinfachen"), EditTool::Simplify, true); tile(IC_WAVES, tr("Glätten"), EditTool::Smooth, false);
+        tile(IC_BRUSH, tr("Bereinigen"), EditTool::Clean, true); tile(IC_CIRCLE_DASHED, tr("Lochfüllung"), EditTool::Holes, false);
+        tile(IC_ROTATE_3D, tr("Modell ausrichten"), EditTool::Align, true); tile(IC_SCISSORS, tr("Schnittebene"), EditTool::Cut, false);
         ImGui::EndDisabled();
         ImGui::BeginDisabled(jobRunning_ || (!hasMesh() && !source_.available()));
         if (forge::primaryButton(IC_SPARKLES "  Ein-Klick-Prozess##t", {-FLT_MIN, px(38)})) openOneClick();
         forge::noteItem("Ein-Klick-Prozess");
         ImGui::EndDisabled();
-        if (hasMesh() && view_.hasColor()) forge::toggle("Farbe anzeigen", &view_.showColor);
-        if (hasMesh()) forge::toggle("Boden anzeigen", &view_.showFloor);
+        if (hasMesh() && view_.hasColor()) forge::toggle(tr("Farbe anzeigen"), &view_.showColor);
+        if (hasMesh()) forge::toggle(tr("Boden anzeigen"), &view_.showFloor);
         forge::endCard();
         exportPanel();
         return;
@@ -192,27 +193,27 @@ void EditUi::panel() {
     forge::beginCard("##tool");
     switch (tool_) {
     case EditTool::Simplify: {
-        toolHeader("Vereinfachen", "Verringert die Zahl der Dreiecke und erhält dabei die Form so gut wie möglich.");
-        if (forge::sliderInt("Dreiecke behalten", &simplifyPercent_, 1, 100, "%d %%")) dropPreview();
-        forge::labelValue("Ergebnis", ("etwa "+grouped(base_.triangleCount()*simplifyPercent_/100)).c_str());
-        footer([this] { const size_t target = base_.triangleCount()*simplifyPercent_/100; runPreview("Vereinfachen", [target](Mesh& m) { simplifyMesh(m, target); computeNormals(m); }); }, [this] { simplifyPercent_ = 50; dropPreview(); });
+        toolHeader(tr("Vereinfachen"), tr("Verringert die Zahl der Dreiecke und erhält dabei die Form so gut wie möglich."));
+        if (forge::sliderInt(tr("Dreiecke behalten"), &simplifyPercent_, 1, 100, "%d %%")) dropPreview();
+        forge::labelValue(tr("Ergebnis"), trf("etwa %s", grouped(base_.triangleCount()*simplifyPercent_/100)).c_str());
+        footer([this] { const size_t target = base_.triangleCount()*simplifyPercent_/100; runPreview(tr("Vereinfachen"), [target](Mesh& m) { simplifyMesh(m, target); computeNormals(m); }); }, [this] { simplifyPercent_ = 50; dropPreview(); });
         break; }
     case EditTool::Smooth: {
-        toolHeader("Glätten", "Beruhigt die Oberfläche, ohne dass das Modell schrumpft. Offene Ränder bleiben stehen.");
+        toolHeader(tr("Glätten"), tr("Beruhigt die Oberfläche, ohne dass das Modell schrumpft. Offene Ränder bleiben stehen."));
         if (forge::segmented("smooth", smoothLevel_, kLevels, 4)) { smoothIterations_ = smoothIterationsFor((Level)smoothLevel_); dropPreview(); }
-        if (forge::sliderInt("Durchgänge", &smoothIterations_, 0, 40)) { smoothLevel_ = smoothIterations_ == 3 ? 1 : smoothIterations_ == 8 ? 2 : smoothIterations_ == 20 ? 3 : smoothIterations_ == 0 ? 0 : -1; dropPreview(); }
-        if (forge::toggle("Scharfe Kanten erhalten", &keepEdges_)) dropPreview();
-        footer([this] { SmoothOptions o; o.iterations = smoothIterations_; o.keepEdges = keepEdges_; runPreview("Glätten", [o](Mesh& m) { smoothSurface(m, o); }); }, [this] { smoothLevel_ = 1; smoothIterations_ = 3; keepEdges_ = true; dropPreview(); });
+        if (forge::sliderInt(tr("Durchgänge"), &smoothIterations_, 0, 40)) { smoothLevel_ = smoothIterations_ == 3 ? 1 : smoothIterations_ == 8 ? 2 : smoothIterations_ == 20 ? 3 : smoothIterations_ == 0 ? 0 : -1; dropPreview(); }
+        if (forge::toggle(tr("Scharfe Kanten erhalten"), &keepEdges_)) dropPreview();
+        footer([this] { SmoothOptions o; o.iterations = smoothIterations_; o.keepEdges = keepEdges_; runPreview(tr("Glätten"), [o](Mesh& m) { smoothSurface(m, o); }); }, [this] { smoothLevel_ = 1; smoothIterations_ = 3; keepEdges_ = true; dropPreview(); });
         break; }
     case EditTool::Clean: {
-        toolHeader("Bereinigen", "Entfernt, was nicht zum Objekt gehört.");
-        char fmt[48]; snprintf(fmt, sizeof fmt, cleanShare_ <= 0 ? "aus" : "unter %.1f %%%%", cleanShare_);
-        if (forge::slider("Kleine Teile entfernen", &cleanShare_, 0, 50, fmt)) dropPreview();
-        ImGui::PushStyleColor(ImGuiCol_Text, forge::textDim); ImGui::TextUnformatted("Spitzen entfernen"); ImGui::PopStyleColor();
+        toolHeader(tr("Bereinigen"), tr("Entfernt, was nicht zum Objekt gehört."));
+        char fmt[48]; snprintf(fmt, sizeof fmt, cleanShare_ <= 0 ? "aus" : tr("unter %.1f %%%%"), cleanShare_);
+        if (forge::slider(tr("Kleine Teile entfernen"), &cleanShare_, 0, 50, fmt)) dropPreview();
+        ImGui::PushStyleColor(ImGuiCol_Text, forge::textDim); ImGui::TextUnformatted(tr("Spitzen entfernen")); ImGui::PopStyleColor();
         if (forge::segmented("spikes", cleanSpikes_, kLevels, 4)) dropPreview();
-        ImGui::PushStyleColor(ImGuiCol_Text, forge::textDim); ImGui::TextUnformatted("Ränder glätten"); ImGui::PopStyleColor();
+        ImGui::PushStyleColor(ImGuiCol_Text, forge::textDim); ImGui::TextUnformatted(tr("Ränder glätten")); ImGui::PopStyleColor();
         if (forge::segmented("rims", cleanRims_, kLevels, 4)) dropPreview();
-        footer([this] { const float share = cleanShare_/100; const Level sp = (Level)cleanSpikes_, ri = (Level)cleanRims_; runPreview("Bereinigen", [=](Mesh& m) { removeSmallParts(m, share); removeSpikes(m, sp); smoothRims(m, ri); computeNormals(m); }); }, [this] { cleanShare_ = 5; cleanSpikes_ = 2; cleanRims_ = 1; dropPreview(); });
+        footer([this] { const float share = cleanShare_/100; const Level sp = (Level)cleanSpikes_, ri = (Level)cleanRims_; runPreview(tr("Bereinigen"), [=](Mesh& m) { removeSmallParts(m, share); removeSpikes(m, sp); smoothRims(m, ri); computeNormals(m); }); }, [this] { cleanShare_ = 5; cleanSpikes_ = 2; cleanRims_ = 1; dropPreview(); });
         break; }
     case EditTool::Holes: holesPanel(); break;
     case EditTool::Align: alignPanel(); break;
@@ -222,17 +223,17 @@ void EditUi::panel() {
     forge::endCard();
 }
 void EditUi::exportPanel() {
-    forge::beginCard("##export", "Modell exportieren", IC_DOWNLOAD);
+    forge::beginCard("##export", tr("Modell exportieren"), IC_DOWNLOAD);
     ImGui::BeginDisabled(!hasMesh() || jobRunning_);
     const char* exts[] = {".stl", ".obj", ".ply"}; const char* labels[] = {"STL", "OBJ", "PLY"};
     const float bw = (ImGui::GetContentRegionAvail().x-2*ImGui::GetStyle().ItemSpacing.x)/3;
     for (int i = 0; i < 3; i++) {
         if (i) ImGui::SameLine();
         if (forge::button(labels[i], {bw, 0})) {
-            const std::string ext = exts[i]; const std::vector<filedialog::Filter> filter = {{std::string(labels[i])+"-Datei", {ext.substr(1)}}};
-            filedialog::request(filedialog::Kind::Save, std::string("Modell als ")+labels[i]+" speichern", uniquePath(outPath_, exts[i]), filter, [this](const std::string& p) {
+            const std::string ext = exts[i]; const std::vector<filedialog::Filter> filter = {{trf("%s-Datei", labels[i]), {ext.substr(1)}}};
+            filedialog::request(filedialog::Kind::Save, trf("Modell als %s speichern", labels[i]), uniquePath(outPath_, exts[i]), filter, [this](const std::string& p) {
                 std::string err; std::error_code ec; std::filesystem::create_directories(std::filesystem::path(p).parent_path(), ec);
-                if (saveMesh(base_, p, err)) forge::toast("Gespeichert: "+std::filesystem::path(p).filename().string(), forge::Toast::Success); else forge::toast(err, forge::Toast::Error);
+                if (saveMesh(base_, p, err)) forge::toast(tr("Gespeichert: ")+std::filesystem::path(p).filename().string(), forge::Toast::Success); else forge::toast(err, forge::Toast::Error);
             });
         }
         forge::noteItem(labels[i]);
@@ -240,11 +241,11 @@ void EditUi::exportPanel() {
     ImGui::EndDisabled();
     forge::endCard();
     if (printCard) printCard();
-    forge::beginCard("##open", "Modell öffnen", IC_FOLDER_OPEN);
+    forge::beginCard("##open", tr("Modell öffnen"), IC_FOLDER_OPEN);
     ImGui::BeginDisabled(jobRunning_);
     if (forge::button(IC_FOLDER_OPEN "  Datei wählen ...##model", {-FLT_MIN, 0})) {
         const std::string start = !outputFolder_.empty() ? outputFolder_ : std::filesystem::path(outPath_).parent_path().string();
-        filedialog::request(filedialog::Kind::Open, "Modell öffnen", start, {{"3D-Modell", {"stl", "obj", "ply"}}}, [this](const std::string& p) { if (loadFile(p)) forge::toast("Geöffnet: "+std::filesystem::path(p).filename().string(), forge::Toast::Success); });
+        filedialog::request(filedialog::Kind::Open, tr("Modell öffnen"), start, {{tr("3D-Modell"), {"stl", "obj", "ply"}}}, [this](const std::string& p) { if (loadFile(p)) forge::toast(tr("Geöffnet: ")+std::filesystem::path(p).filename().string(), forge::Toast::Success); });
     }
     forge::noteItem("Modell öffnen");
     ImGui::EndDisabled();
@@ -259,32 +260,32 @@ void EditUi::previewFill() {
         const bool take = holeManual_ ? (i < holeChosen_.size() && holeChosen_[i]) : holes_[i].perimeterMm <= holeLimit_;
         if (take) { use.push_back(holes_[i]); holeFilled_[i] = 1; }
     }
-    if (use.empty()) { forge::toast(holeManual_ ? "Erst Löcher anklicken." : "Kein Loch liegt unter diesem Umfang.", forge::Toast::Warning); hasPreview_ = false; linesDirty_ = true; return; }
+    if (use.empty()) { forge::toast(holeManual_ ? tr("Erst Löcher anklicken.") : tr("Kein Loch liegt unter diesem Umfang."), forge::Toast::Warning); hasPreview_ = false; linesDirty_ = true; return; }
     const FillType ty = (FillType)fillType_; const size_t first = base_.triangleCount();
-    runPreview("Löcher füllen", [use = std::move(use), ty](Mesh& m) { fillHoleList(m, use, ty); }, first);
+    runPreview(tr("Löcher füllen"), [use = std::move(use), ty](Mesh& m) { fillHoleList(m, use, ty); }, first);
 }
 void EditUi::holesPanel() {
-    toolHeader("Lochfüllung");
-    if (analysisRunning_ || analysisDirty_) { forge::hint("Löcher werden gesucht ..."); return; }
-    if (holes_.empty()) { forge::chip("Keine Löcher: das Modell ist wasserdicht", forge::green, IC_CIRCLE_CHECK); return; }
-    int mode = holeManual_ ? 1 : 0; const char* const modes[] = {"Auto", "Manuell"};
+    toolHeader(tr("Lochfüllung"));
+    if (analysisRunning_ || analysisDirty_) { forge::hint(tr("Löcher werden gesucht ...")); return; }
+    if (holes_.empty()) { forge::chip(tr("Keine Löcher: das Modell ist wasserdicht"), forge::green, IC_CIRCLE_CHECK); return; }
+    int mode = holeManual_ ? 1 : 0; const char* const modes[] = {tr("Auto"), tr("Manuell")};
     if (forge::segmented("mode", mode, modes, 2)) { holeManual_ = mode == 1; dropPreview(); bridging_ = false; bridgeHasFirst_ = false; linesDirty_ = true; }
-    ImGui::PushStyleColor(ImGuiCol_Text, forge::textDim); ImGui::TextUnformatted("Typ"); ImGui::PopStyleColor();
+    ImGui::PushStyleColor(ImGuiCol_Text, forge::textDim); ImGui::TextUnformatted(tr("Typ")); ImGui::PopStyleColor();
     if (forge::segmented("type", fillType_, kFillTypes, 3) && hasPreview_) { dropPreview(); previewFill(); }
-    if (ImGui::IsItemHovered()) ImGui::SetTooltip("Planar: straff gespannt.\nTangente: läuft in Richtung der Umgebung aus.\nKrümmung: setzt auch die Wölbung fort, empfindlich bei unruhigen Rändern.");
+    if (ImGui::IsItemHovered()) ImGui::SetTooltip(tr("Planar: straff gespannt.\nTangente: läuft in Richtung der Umgebung aus.\nKrümmung: setzt auch die Wölbung fort, empfindlich bei unruhigen Rändern."));
     const float maxP = holes_.back().perimeterMm;
     if (!holeManual_) {
-        if (forge::slider("Lochumfang (mm)", &holeLimit_, 1, std::max(2.f, maxP*1.05f), "%.0f", true)) { dropPreview(); linesDirty_ = true; }
+        if (forge::slider(tr("Lochumfang (mm)"), &holeLimit_, 1, std::max(2.f, maxP*1.05f), "%.0f", true)) { dropPreview(); linesDirty_ = true; }
         size_t n = 0; for (const MeshHole& h : holes_) n += h.perimeterMm <= holeLimit_;
-        char b[48]; snprintf(b, sizeof b, "%zu von %zu", n, holes_.size()); forge::labelValue("Werden gefüllt", b);
-        snprintf(b, sizeof b, "%.0f mm Umfang", maxP); forge::labelValue("Größtes Loch", b);
+        char b[160]; snprintf(b, sizeof b, tr("%zu von %zu"), n, holes_.size()); forge::labelValue(tr("Werden gefüllt"), b);
+        snprintf(b, sizeof b, tr("%.0f mm Umfang"), maxP); forge::labelValue(tr("Größtes Loch"), b);
     } else {
         size_t chosen = 0; for (uint8_t c : holeChosen_) chosen += c;
-        char b[48]; snprintf(b, sizeof b, "%zu von %zu", chosen, holes_.size()); forge::labelValue("Ausgewählt", b);
-        forge::hint("Rand im Bild anklicken. Grün ist klein, rot ist groß.");
+        char b[160]; snprintf(b, sizeof b, tr("%zu von %zu"), chosen, holes_.size()); forge::labelValue(tr("Ausgewählt"), b);
+        forge::hint(tr("Rand im Bild anklicken. Grün ist klein, rot ist groß."));
         const float w = (ImGui::GetContentRegionAvail().x-ImGui::GetStyle().ItemSpacing.x)/2;
-        if (forge::button("Alle", {w, 0})) { std::fill(holeChosen_.begin(), holeChosen_.end(), 1); dropPreview(); linesDirty_ = true; }
-        ImGui::SameLine(); if (forge::button("Keine", {w, 0})) { std::fill(holeChosen_.begin(), holeChosen_.end(), 0); dropPreview(); linesDirty_ = true; }
+        if (forge::button(tr("Alle"), {w, 0})) { std::fill(holeChosen_.begin(), holeChosen_.end(), 1); dropPreview(); linesDirty_ = true; }
+        ImGui::SameLine(); if (forge::button(tr("Keine"), {w, 0})) { std::fill(holeChosen_.begin(), holeChosen_.end(), 0); dropPreview(); linesDirty_ = true; }
         const float lineH = ImGui::GetTextLineHeightWithSpacing(); const float listH = std::clamp(ImGui::GetMainViewport()->Size.y*.3f, 5*lineH, 16*lineH);
         ImGui::PushStyleColor(ImGuiCol_ChildBg, forge::bg);
         ImGui::BeginChild("##holes", {-1, listH}, ImGuiChildFlags_AlwaysUseWindowPadding);
@@ -305,12 +306,12 @@ void EditUi::holesPanel() {
         }
         ImGui::EndChild(); ImGui::PopStyleColor();
         if (hoverFromList >= 0 && hoverFromList != holeHover_) { holeHover_ = hoverFromList; linesDirty_ = true; }
-        forge::hint("Doppelklick springt zum Loch.");
+        forge::hint(tr("Doppelklick springt zum Loch."));
         ImGui::BeginDisabled(hasPreview_);
         if (forge::toggleButton(IC_SPLINE "  Brücke bauen##b", bridging_, {-FLT_MIN, 0})) { bridging_ = !bridging_; bridgeHasFirst_ = false; }
         forge::noteItem("Brücke bauen");
         ImGui::EndDisabled();
-        if (bridging_) forge::hint(bridgeHasFirst_ ? "Jetzt die zweite Randkante anklicken." : "Zwei Randkanten anklicken. Die Brücke teilt ein großes Loch oder verbindet zwei Löcher.");
+        if (bridging_) forge::hint(bridgeHasFirst_ ? tr("Jetzt die zweite Randkante anklicken.") : tr("Zwei Randkanten anklicken. Die Brücke teilt ein großes Loch oder verbindet zwei Löcher."));
     }
     footer([this] { previewFill(); }, [this] { holeLimit_ = 100; fillType_ = 1; std::fill(holeChosen_.begin(), holeChosen_.end(), 0); bridging_ = false; dropPreview(); linesDirty_ = true; });
 }
@@ -354,7 +355,7 @@ void EditUi::holesInput(float mx, float my, bool clicked) {
     if (analysisRunning_ || holes_.empty()) return;
     size_t seg = 0; const long h = nearestRim(mx, my, &seg, 9);
     if (h != holeHover_) { holeHover_ = h; linesDirty_ = true; }
-    if (h >= 0) ImGui::SetTooltip("Umfang %.1f mm\nGröße %.1f mm\n%zu Randpunkte", holes_[h].perimeterMm, holes_[h].sizeMm, holes_[h].loop.size());
+    if (h >= 0) ImGui::SetTooltip(tr("Umfang %.1f mm\nGröße %.1f mm\n%zu Randpunkte"), holes_[h].perimeterMm, holes_[h].sizeMm, holes_[h].loop.size());
     if (!clicked || h < 0 || !holeManual_) return;
     if (bridging_) {
         const auto& l = holes_[h].loop; const uint32_t a = l[seg%l.size()], b = l[(seg+1)%l.size()];
@@ -409,25 +410,25 @@ void EditUi::selectionBar(ImVec2 imageMin, ImVec2 imageSize) {
     auto separator = [&] { ImGui::SameLine(0, sep/2); const ImVec2 c = ImGui::GetCursorScreenPos(); ImGui::GetWindowDrawList()->AddLine({c.x, c.y+px(8)}, {c.x, c.y+b-px(8)}, forge::col(forge::lineStrong)); ImGui::Dummy({0, 0}); ImGui::SameLine(0, sep/2); };
     ImGui::BeginDisabled(!idle);
     auto mode = [&](const char* icon, const char* key, SelectMode m, const char* tip) { if (forge::iconButton(icon, key, tip, select_ == m)) select_ = select_ == m ? SelectMode::None : m; ImGui::SameLine(); };
-    mode(IC_LASSO, "Lasso", SelectMode::Lasso, "Lasso: Fläche frei umfahren, Strg wählt ab");
-    mode(IC_SQUARE_DASHED, "Rechteck", SelectMode::Box, "Rechteck aufziehen, Strg wählt ab");
-    mode(IC_MOUSE_POINTER_CLICK, "Objekt", SelectMode::Object, "Zusammenhängendes Teil anklicken, Strg wählt ab");
-    if (forge::iconButton(IC_LAYERS, "Durchdringen", "Durchdringen: wählt auch verdeckte Rückseiten", penetrate_)) penetrate_ = !penetrate_;
+    mode(IC_LASSO, tr("Lasso"), SelectMode::Lasso, tr("Lasso: Fläche frei umfahren, Strg wählt ab"));
+    mode(IC_SQUARE_DASHED, tr("Rechteck"), SelectMode::Box, tr("Rechteck aufziehen, Strg wählt ab"));
+    mode(IC_MOUSE_POINTER_CLICK, tr("Objekt"), SelectMode::Object, tr("Zusammenhängendes Teil anklicken, Strg wählt ab"));
+    if (forge::iconButton(IC_LAYERS, tr("Durchdringen"), tr("Durchdringen: wählt auch verdeckte Rückseiten"), penetrate_)) penetrate_ = !penetrate_;
     separator();
-    if (forge::iconButton(IC_FLIP_HORIZONTAL_2, "Umkehren", "Auswahl umkehren")) { for (uint8_t& s : selected_) s = !s; selectedCount_ = selected_.size()-selectedCount_; flagsDirty_ = true; }
+    if (forge::iconButton(IC_FLIP_HORIZONTAL_2, tr("Umkehren"), tr("Auswahl umkehren"))) { for (uint8_t& s : selected_) s = !s; selectedCount_ = selected_.size()-selectedCount_; flagsDirty_ = true; }
     ImGui::SameLine();
     ImGui::BeginDisabled(!selectedCount_);
-    if (forge::iconButton(IC_CIRCLE_X, "Aufheben", "Auswahl aufheben")) { std::fill(selected_.begin(), selected_.end(), 0); selectedCount_ = 0; flagsDirty_ = true; }
+    if (forge::iconButton(IC_CIRCLE_X, tr("Aufheben"), tr("Auswahl aufheben"))) { std::fill(selected_.begin(), selected_.end(), 0); selectedCount_ = 0; flagsDirty_ = true; }
     ImGui::SameLine();
-    if (forge::iconButton(IC_TRASH_2, "Löschen", "Auswahl löschen (Entf)")) deleteSelected();
+    if (forge::iconButton(IC_TRASH_2, tr("Löschen"), tr("Auswahl löschen (Entf)"))) deleteSelected();
     ImGui::EndDisabled();
     ImGui::EndDisabled();
     separator();
     ImGui::BeginDisabled(jobRunning_ || (!history_.canUndo() && !hasPreview_));
-    if (forge::iconButton(IC_UNDO_2, "Rückgängig", "Rückgängig (Strg+Z)")) undo();
+    if (forge::iconButton(IC_UNDO_2, tr("Rückgängig"), tr("Rückgängig (Strg+Z)"))) undo();
     ImGui::EndDisabled(); ImGui::SameLine();
     ImGui::BeginDisabled(jobRunning_ || !history_.canRedo() || hasPreview_);
-    if (forge::iconButton(IC_REDO_2, "Wiederholen", "Wiederholen (Strg+Y)")) redo();
+    if (forge::iconButton(IC_REDO_2, tr("Wiederholen"), tr("Wiederholen (Strg+Y)"))) redo();
     ImGui::EndDisabled();
     forge::endFloating();
 }
@@ -451,8 +452,8 @@ void EditUi::startCut(const CutPlane& plane) {
     cutHave_ = true; cutMarksDirty_ = true;
 }
 void EditUi::cutPanel() {
-    toolHeader("Schnittebene", "Rot wird entfernt. So lassen sich Unterlage und Reste abschneiden.");
-    int mode = cutMode_; const char* const modes[] = {"Automatisch", "Punkte", "Waagerecht"};
+    toolHeader(tr("Schnittebene"), tr("Rot wird entfernt. So lassen sich Unterlage und Reste abschneiden."));
+    int mode = cutMode_; const char* const modes[] = {tr("Automatisch"), tr("Punkte"), tr("Waagerecht")};
     ImGui::BeginDisabled(jobRunning_);
     if (forge::segmented("cutmode", mode, modes, 3) || (!cutHave_ && cutPoints_.empty() && false)) {
         cutMode_ = mode; cutPoints_.clear(); cutHave_ = false; cutMarks_.clear(); flagsDirty_ = true;
@@ -460,22 +461,22 @@ void EditUi::cutPanel() {
         if (mode == 2) { CutPlane p; p.normal = {0, 0, 1}; p.d = lo_.z+(hi_.z-lo_.z)*0.05f; startCut(p); }
     }
     ImGui::EndDisabled();
-    if (cutMode_ == 1 && !cutHave_) { char b[64]; snprintf(b, sizeof b, "Punkt %zu von 3 auf dem Modell anklicken", cutPoints_.size()+1); forge::hint(b); }
-    if (cutMode_ != 1 && !cutHave_) forge::hint("Ebene oben wählen.");
+    if (cutMode_ == 1 && !cutHave_) { char b[160]; snprintf(b, sizeof b, tr("Punkt %zu von 3 auf dem Modell anklicken"), cutPoints_.size()+1); forge::hint(b); }
+    if (cutMode_ != 1 && !cutHave_) forge::hint(tr("Ebene oben wählen."));
     if (cutHave_) {
         bool ch = false;
-        ch |= forge::slider("Ebene verschieben", &cutOffset_, -view_.radius(), view_.radius(), "%.1f mm");
-        ch |= forge::slider("Drehen, Achse 1", &cutTiltA_, -45, 45, "%.1f °"); ch |= forge::slider("Drehen, Achse 2", &cutTiltB_, -45, 45, "%.1f °");
+        ch |= forge::slider(tr("Ebene verschieben"), &cutOffset_, -view_.radius(), view_.radius(), "%.1f mm");
+        ch |= forge::slider(tr("Drehen, Achse 1"), &cutTiltA_, -45, 45, "%.1f °"); ch |= forge::slider(tr("Drehen, Achse 2"), &cutTiltB_, -45, 45, "%.1f °");
         if (forge::button(IC_REPEAT_2 "  Seite wechseln##c", {-FLT_MIN, 0})) { cutFlip_ = !cutFlip_; ch = true; }
         forge::noteItem("Seite wechseln");
         if (ch) cutMarksDirty_ = true;
         if (cutMarksDirty_) { markBelowPlane(base_, cutPlane(), cutMarks_); cutMarksDirty_ = false; flagsDirty_ = true; }
         size_t n = 0; for (uint8_t m : cutMarks_) n += m;
-        forge::labelValue("Wird entfernt", (grouped(n)+" Dreiecke").c_str(), forge::danger);
+        forge::labelValue(tr("Wird entfernt"), trf("%s Dreiecke", grouped(n)).c_str(), forge::danger);
         if (forge::primaryButton(IC_SCISSORS "  Anwenden##c", {-FLT_MIN, px(38)})) { history_.push(base_); deleteTriangles(base_, cutMarks_); computeNormals(base_); cutHave_ = false; cutPoints_.clear(); cutMarks_.clear(); meshChanged(false); }
         forge::noteItem("Anwenden");
     }
-    if (forge::button("Abbrechen", {-FLT_MIN, 0})) { chooseTool(EditTool::Cut); }
+    if (forge::button(tr("Abbrechen"), {-FLT_MIN, 0})) { chooseTool(EditTool::Cut); }
 }
 bool EditUi::pickPoint(float mx, float my, V3& out, long* triOut) {
     const long t = view_.pickTriangle((int)mx, (int)my); const Mesh& m = shown();
@@ -494,7 +495,7 @@ void EditUi::cutInput(float mx, float my) {
     if (cutPoints_.size() == 3) {
         CutPlane pl;
         if (planeFromPoints(cutPoints_[0], cutPoints_[1], cutPoints_[2], pl)) startCut(pl);
-        else { cutPoints_.clear(); forge::toast("Die drei Punkte liegen auf einer Linie.", forge::Toast::Warning); }
+        else { cutPoints_.clear(); forge::toast(tr("Die drei Punkte liegen auf einer Linie."), forge::Toast::Warning); }
     }
 }
 void EditUi::drawCutPlane(ImVec2 o) {
@@ -510,10 +511,10 @@ void EditUi::drawCutPlane(ImVec2 o) {
 
 // ---- Align ---------------------------------------------------------------------------------------
 void EditUi::alignPanel() {
-    toolHeader("Modell ausrichten");
+    toolHeader(tr("Modell ausrichten"));
     ImGui::BeginDisabled(jobRunning_);
     if (forge::button(IC_LAYERS "  Größte Fläche nach unten##a", {-FLT_MIN, 0})) {
-        runPreview("Ausrichten", [](Mesh& m) {
+        runPreview(tr("Ausrichten"), [](Mesh& m) {
             CutPlane p; if (!largestPlane(m, p, 0.5f)) return;
             // The object lies on the side with most of its points.
             V3 c{}; for (const V3& v : m.vertices) c = c+v; c = c*(1.f/std::max<size_t>(1, m.vertices.size()));
@@ -524,11 +525,11 @@ void EditUi::alignPanel() {
     if (forge::toggleButton(pickFloor_ ? IC_CROSSHAIR "  Jetzt eine Fläche anklicken##f" : IC_CROSSHAIR "  Fläche im Bild als Boden##f", pickFloor_, {-FLT_MIN, 0})) pickFloor_ = !pickFloor_;
     forge::noteItem("Fläche im Bild als Boden wählen");
     ImGui::EndDisabled();
-    auto rotate = [this] { const float x = rotX_, y = rotY_, z = rotZ_; runPreview("Drehen", [x, y, z](Mesh& m) { rotateMesh(m, x, y, z); orientUpright(m, V3{0, 0, 1}); computeNormals(m); }); };
+    auto rotate = [this] { const float x = rotX_, y = rotY_, z = rotZ_; runPreview(tr("Drehen"), [x, y, z](Mesh& m) { rotateMesh(m, x, y, z); orientUpright(m, V3{0, 0, 1}); computeNormals(m); }); };
     bool released = false;
-    forge::slider("Drehen um X", &rotX_, -180, 180, "%.1f °"); released |= ImGui::IsItemDeactivated();
-    forge::slider("Drehen um Y", &rotY_, -180, 180, "%.1f °"); released |= ImGui::IsItemDeactivated();
-    forge::slider("Drehen um Z", &rotZ_, -180, 180, "%.1f °"); released |= ImGui::IsItemDeactivated();
+    forge::slider(tr("Drehen um X"), &rotX_, -180, 180, "%.1f °"); released |= ImGui::IsItemDeactivated();
+    forge::slider(tr("Drehen um Y"), &rotY_, -180, 180, "%.1f °"); released |= ImGui::IsItemDeactivated();
+    forge::slider(tr("Drehen um Z"), &rotZ_, -180, 180, "%.1f °"); released |= ImGui::IsItemDeactivated();
     if (released && !jobRunning_) rotate();
     const float gap = ImGui::GetStyle().ItemSpacing.x, bw = (ImGui::GetContentRegionAvail().x-2*gap)/3;
     auto quarter = [&](const char* label, float& axis) { if (forge::button(label, {bw, 0})) { axis = axis+90 > 180 ? axis-270 : axis+90; rotate(); } };
@@ -540,22 +541,22 @@ void EditUi::alignPanel() {
 
 // ---- Measure -------------------------------------------------------------------------------------
 void EditUi::measurePanel() {
-    forge::beginCard("##measure", "Schnellmessung", IC_RULER);
-    forge::hint("Zwei Punkte auf dem Modell anklicken, um ihren Abstand zu messen.");
+    forge::beginCard("##measure", tr("Schnellmessung"), IC_RULER);
+    forge::hint(tr("Zwei Punkte auf dem Modell anklicken, um ihren Abstand zu messen."));
     if (measurePoints_.size() == 2) {
-        const V3 d = measurePoints_[1]-measurePoints_[0]; char b[48];
+        const V3 d = measurePoints_[1]-measurePoints_[0]; char b[160];
         ImGui::PushFont(forge::fontTitle); snprintf(b, sizeof b, "%.2f mm", norm(d)); ImGui::TextColored(forge::orange, "%s", b); ImGui::PopFont();
         snprintf(b, sizeof b, "%.2f mm", std::fabs(d.x)); forge::labelValue("X", b); snprintf(b, sizeof b, "%.2f mm", std::fabs(d.y)); forge::labelValue("Y", b); snprintf(b, sizeof b, "%.2f mm", std::fabs(d.z)); forge::labelValue("Z", b);
     }
     ImGui::BeginDisabled(measurePoints_.empty());
-    if (forge::button("Messpunkte löschen", {-FLT_MIN, 0})) measurePoints_.clear();
+    if (forge::button(tr("Messpunkte löschen"), {-FLT_MIN, 0})) measurePoints_.clear();
     ImGui::EndDisabled();
     forge::endCard();
     if (haveSize_) {
-        forge::beginCard("##size", "Modell", IC_CUBOID); char b[64];
-        snprintf(b, sizeof b, "%.1f x %.1f x %.1f mm", tight_[0], tight_[1], tight_[2]); forge::labelValue("Größe", b);
-        forge::labelValue("Dreiecke", grouped(base_.triangleCount()).c_str());
-        if (holes_.empty() && !analysisRunning_ && !analysisDirty_) { snprintf(b, sizeof b, "%.2f cm³", std::fabs(volume_)/1000); forge::labelValue("Volumen", b); }
+        forge::beginCard("##size", tr("Modell"), IC_CUBOID); char b[160];
+        snprintf(b, sizeof b, "%.1f x %.1f x %.1f mm", tight_[0], tight_[1], tight_[2]); forge::labelValue(tr("Größe"), b);
+        forge::labelValue(tr("Dreiecke"), grouped(base_.triangleCount()).c_str());
+        if (holes_.empty() && !analysisRunning_ && !analysisDirty_) { snprintf(b, sizeof b, "%.2f cm³", std::fabs(volume_)/1000); forge::labelValue(tr("Volumen"), b); }
         forge::endCard();
     }
 }
@@ -595,8 +596,8 @@ void EditUi::viewport(bool measure) {
     const ImVec2 e{o.x+w, o.y+h};
     if (!hasMesh()) {
         const int v0 = dl->VtxBuffer.Size; dl->AddRectFilled(o, e, IM_COL32_WHITE, px(14)); ImGui::ShadeVertsLinearColorGradientKeepAlpha(dl, v0, dl->VtxBuffer.Size, o, {o.x, e.y}, IM_COL32(19, 24, 32, 255), IM_COL32(9, 12, 17, 255));
-        ImGui::PushFont(forge::fontTitle); const char* t = "Noch kein Modell"; const ImVec2 ts = ImGui::CalcTextSize(t); dl->AddText({o.x+(w-ts.x)/2, o.y+h/2.f-px(14)}, forge::col(forge::text), t); ImGui::PopFont();
-        const char* t2 = "Erstelle eines im Reiter Scan oder öffne links eine Datei."; const ImVec2 t2s = ImGui::CalcTextSize(t2); dl->AddText({o.x+(w-t2s.x)/2, o.y+h/2.f+px(12)}, forge::col(forge::textDim), t2);
+        ImGui::PushFont(forge::fontTitle); const char* t = tr("Noch kein Modell"); const ImVec2 ts = ImGui::CalcTextSize(t); dl->AddText({o.x+(w-ts.x)/2, o.y+h/2.f-px(14)}, forge::col(forge::text), t); ImGui::PopFont();
+        const char* t2 = tr("Erstelle eines im Reiter Scan oder öffne links eine Datei."); const ImVec2 t2s = ImGui::CalcTextSize(t2); dl->AddText({o.x+(w-t2s.x)/2, o.y+h/2.f+px(12)}, forge::col(forge::textDim), t2);
         return;
     }
     const GLuint tex = view_.render(w, h);
@@ -625,7 +626,7 @@ void EditUi::viewport(bool measure) {
                     V3 sum{}; const float r2 = std::pow(view_.radius()*0.04f, 2.f);
                     for (size_t i = 0; i < base_.indices.size(); i += 3) { const V3 g = base_.vertices[base_.indices[i]]-p; if (dot(g, g) < r2) { const V3 fn = cross(base_.vertices[base_.indices[i+1]]-base_.vertices[base_.indices[i]], base_.vertices[base_.indices[i+2]]-base_.vertices[base_.indices[i]]); if (dot(fn, n) > 0) sum = sum+fn; } }
                     if (norm(sum) > 0) n = normalized(sum);
-                    runPreview("Ausrichten", [n](Mesh& m) { orientUpright(m, n*-1.f); computeNormals(m); });
+                    runPreview(tr("Ausrichten"), [n](Mesh& m) { orientUpright(m, n*-1.f); computeNormals(m); });
                 }
             } else if (select_ == SelectMode::Object && clicked) selectObject((int)mx, (int)my, io.KeyCtrl);
             else if ((select_ == SelectMode::Lasso || select_ == SelectMode::Box) && clicked) { dragging_ = true; dragStart_ = io.MousePos; lasso_.assign(1, io.MousePos); }
@@ -643,16 +644,16 @@ void EditUi::viewport(bool measure) {
     gizmo(o, {(float)w, (float)h});
     // What the model is: chips, top left.
     ImVec2 hud{o.x+px(12), o.y+px(12)}; const float line = px(34); char b[96];
-    snprintf(b, sizeof b, "%s Dreiecke", grouped(shown().triangleCount()).c_str()); forge::chipAt(dl, hud, b, forge::textDim, IC_TRIANGLE); hud.y += line;
-    if (analysisRunning_ || analysisDirty_) forge::chipAt(dl, hud, "Netz wird geprüft", forge::textDim, IC_ACTIVITY);
-    else if (holes_.empty()) forge::chipAt(dl, hud, "Wasserdicht", forge::green, IC_CIRCLE_CHECK);
-    else { snprintf(b, sizeof b, "%s, %s offene Kanten", holesText(holes_.size()).c_str(), grouped(openEdges_).c_str()); forge::chipAt(dl, hud, b, forge::amber, IC_CIRCLE_DASHED); }
+    snprintf(b, sizeof b, tr("%s Dreiecke"), grouped(shown().triangleCount()).c_str()); forge::chipAt(dl, hud, b, forge::textDim, IC_TRIANGLE); hud.y += line;
+    if (analysisRunning_ || analysisDirty_) forge::chipAt(dl, hud, tr("Netz wird geprüft"), forge::textDim, IC_ACTIVITY);
+    else if (holes_.empty()) forge::chipAt(dl, hud, tr("Wasserdicht"), forge::green, IC_CIRCLE_CHECK);
+    else { snprintf(b, sizeof b, tr("%s, %s offene Kanten"), holesText(holes_.size()).c_str(), grouped(openEdges_).c_str()); forge::chipAt(dl, hud, b, forge::amber, IC_CIRCLE_DASHED); }
     hud.y += line;
     snprintf(b, sizeof b, "%.1f x %.1f x %.1f mm", tight_[0], tight_[1], tight_[2]); forge::chipAt(dl, hud, b, forge::textDim, IC_CUBOID); hud.y += line;
-    if (hasPreview_) { forge::chipAt(dl, hud, "Vorschau, noch nicht übernommen", forge::orange, IC_EYE); hud.y += line; }
-    if (selectedCount_) { snprintf(b, sizeof b, "%s ausgewählt", grouped(selectedCount_).c_str()); forge::chipAt(dl, hud, b, forge::danger, IC_LASSO); hud.y += line; }
+    if (hasPreview_) { forge::chipAt(dl, hud, tr("Vorschau, noch nicht übernommen"), forge::orange, IC_EYE); hud.y += line; }
+    if (selectedCount_) { snprintf(b, sizeof b, tr("%s ausgewählt"), grouped(selectedCount_).c_str()); forge::chipAt(dl, hud, b, forge::danger, IC_LASSO); hud.y += line; }
     if (!measure) selectionBar(o, {(float)w, (float)h});
-    { const char* tip = picksWithLeft ? "Links wählen  ·  Umschalt drehen  ·  Rechts bewegen" : "Links drehen  ·  Rechts bewegen  ·  Rad zoomen"; const float fs = ImGui::GetFontSize()*.88f; const float tw = forge::fontBody->CalcTextSizeA(fs, FLT_MAX, 0, tip).x; if (tw+px(28) < (w-px(380))/2) dl->AddText(forge::fontBody, fs, {o.x+px(14), e.y-px(26)}, forge::col(forge::textFaint), tip); }
+    { const char* tip = picksWithLeft ? tr("Links wählen  ·  Umschalt drehen  ·  Rechts bewegen") : tr("Links drehen  ·  Rechts bewegen  ·  Rad zoomen"); const float fs = ImGui::GetFontSize()*.88f; const float tw = forge::fontBody->CalcTextSizeA(fs, FLT_MAX, 0, tip).x; if (tw+px(28) < (w-px(380))/2) dl->AddText(forge::fontBody, fs, {o.x+px(14), e.y-px(26)}, forge::col(forge::textFaint), tip); }
     if (toolBusy) { std::string label = busyLabel(); forge::busyOverlay(o, {(float)w, (float)h}, label.c_str(), jobProgress_); }
 }
 
@@ -668,42 +669,42 @@ void EditUi::oneClickDialog() {
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, {px(20), px(18)}); ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, px(16)); ImGui::PushStyleColor(ImGuiCol_PopupBg, forge::surface); ImGui::PushStyleColor(ImGuiCol_TitleBgActive, forge::surface);
     const bool open = ImGui::BeginPopupModal("Ein-Klick-Prozess", nullptr, ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoTitleBar);
     if (!open) { ImGui::PopStyleVar(2); ImGui::PopStyleColor(2); return; }
-    ImGui::PushFont(forge::fontTitle); ImGui::PushStyleColor(ImGuiCol_Text, forge::orange); ImGui::TextUnformatted(IC_SPARKLES); ImGui::PopStyleColor(); ImGui::SameLine(0, px(8)); ImGui::TextUnformatted("Ein-Klick-Prozess"); ImGui::PopFont();
-    forge::hint("Führt alle Schritte nacheinander aus. Danach lässt sich jedes Ergebnis mit den Werkzeugen weiter bearbeiten oder rückgängig machen.");
+    ImGui::PushFont(forge::fontTitle); ImGui::PushStyleColor(ImGuiCol_Text, forge::orange); ImGui::TextUnformatted(IC_SPARKLES); ImGui::PopStyleColor(); ImGui::SameLine(0, px(8)); ImGui::TextUnformatted(tr("Ein-Klick-Prozess")); ImGui::PopFont();
+    forge::hint(tr("Führt alle Schritte nacheinander aus. Danach lässt sich jedes Ergebnis mit den Werkzeugen weiter bearbeiten oder rückgängig machen."));
     OneClickConfig& k = oneClick_;
     const float colW = (ImGui::GetContentRegionAvail().x-px(12))/2;
     ImGui::BeginGroup(); ImGui::PushItemWidth(colW); ImGui::BeginChild("##oc1", {colW, 0}, ImGuiChildFlags_AutoResizeY);
     if (useScanForOneClick_) {
-        forge::beginCard("##ocf", "Fusion");
-        { const float prev = oneClickVoxel_; (void)prev; ImGui::PushStyleColor(ImGuiCol_Text, forge::textDim); ImGui::TextUnformatted("Auflösung"); ImGui::PopStyleColor(); ImGui::SetNextItemWidth(-1);
+        forge::beginCard("##ocf", tr("Fusion"));
+        { const float prev = oneClickVoxel_; (void)prev; ImGui::PushStyleColor(ImGuiCol_Text, forge::textDim); ImGui::TextUnformatted(tr("Auflösung")); ImGui::PopStyleColor(); ImGui::SetNextItemWidth(-1);
           const bool cb = ImGui::BeginCombo("##vox", kVoxelNames[oneClickVoxel_]); forge::noteItem("Fusion-Auflösung");
           if (cb) { for (int i = 0; i < 4; i++) { if (ImGui::Selectable(kVoxelNames[i], oneClickVoxel_ == i)) oneClickVoxel_ = i; forge::noteItem(kVoxelNames[i]); } ImGui::EndCombo(); } }
-        forge::sliderInt("Rauschunterdrückung", &oneClickNoise_, 0, 100, "%d %%");
+        forge::sliderInt(tr("Rauschunterdrückung"), &oneClickNoise_, 0, 100, "%d %%");
         forge::endCard();
     }
-    forge::beginCard("##ocn", "Netz");
-    { float pct = k.minPartShare*100; char fmt[32]; snprintf(fmt, sizeof fmt, pct <= 0 ? "behalten" : "unter %.1f %%%%", pct); if (forge::slider("Kleine Teile", &pct, 0, 50, fmt)) k.minPartShare = pct/100; }
+    forge::beginCard("##ocn", tr("Netz"));
+    { float pct = k.minPartShare*100; char fmt[32]; snprintf(fmt, sizeof fmt, pct <= 0 ? "behalten" : tr("unter %.1f %%%%"), pct); if (forge::slider(tr("Kleine Teile"), &pct, 0, 50, fmt)) k.minPartShare = pct/100; }
     auto levels = [&](const char* label, const char* id, Level& l) { int v = (int)l; ImGui::PushStyleColor(ImGuiCol_Text, forge::textDim); ImGui::TextUnformatted(label); ImGui::PopStyleColor(); if (forge::segmented(id, v, kLevels, 4)) l = (Level)v; };
-    levels("Spitzen", "osp", k.spikes); levels("Glätten", "osm", k.smooth); forge::toggle("Scharfe Kanten erhalten", &k.keepEdges); levels("Ränder glätten", "ori", k.rimSmooth);
+    levels(tr("Spitzen"), "osp", k.spikes); levels(tr("Glätten"), "osm", k.smooth); forge::toggle(tr("Scharfe Kanten erhalten"), &k.keepEdges); levels(tr("Ränder glätten"), "ori", k.rimSmooth);
     forge::endCard();
     ImGui::EndChild(); ImGui::PopItemWidth(); ImGui::EndGroup();
     ImGui::SameLine(0, px(12));
     ImGui::BeginChild("##oc2", {colW, 0}, ImGuiChildFlags_AutoResizeY);
-    forge::beginCard("##och", "Löcher");
-    forge::toggle("Löcher füllen", &k.fillHoles);
+    forge::beginCard("##och", tr("Löcher"));
+    forge::toggle(tr("Löcher füllen"), &k.fillHoles);
     ImGui::BeginDisabled(!k.fillHoles);
-    { int v = (int)k.fillType; ImGui::PushStyleColor(ImGuiCol_Text, forge::textDim); ImGui::TextUnformatted("Typ"); ImGui::PopStyleColor(); if (forge::segmented("oft", v, kFillTypes, 3)) k.fillType = (FillType)v; }
-    bool all = k.maxHolePerimeterMm < 0; if (forge::toggle("Alle, wasserdicht", &all)) k.maxHolePerimeterMm = all ? -1 : 100;
-    if (!all) forge::slider("Lochumfang bis", &k.maxHolePerimeterMm, 1, 2000, "%.0f mm", true);
+    { int v = (int)k.fillType; ImGui::PushStyleColor(ImGuiCol_Text, forge::textDim); ImGui::TextUnformatted(tr("Typ")); ImGui::PopStyleColor(); if (forge::segmented("oft", v, kFillTypes, 3)) k.fillType = (FillType)v; }
+    bool all = k.maxHolePerimeterMm < 0; if (forge::toggle(tr("Alle, wasserdicht"), &all)) k.maxHolePerimeterMm = all ? -1 : 100;
+    if (!all) forge::slider(tr("Lochumfang bis"), &k.maxHolePerimeterMm, 1, 2000, "%.0f mm", true);
     ImGui::EndDisabled();
     forge::endCard();
-    forge::beginCard("##ocs", "Vereinfachen");
-    { int keep = (int)std::round(k.keepTriangles*100); if (forge::sliderInt("Dreiecke behalten", &keep, 1, 100, "%d %%")) k.keepTriangles = keep/100.f; }
+    forge::beginCard("##ocs", tr("Vereinfachen"));
+    { int keep = (int)std::round(k.keepTriangles*100); if (forge::sliderInt(tr("Dreiecke behalten"), &keep, 1, 100, "%d %%")) k.keepTriangles = keep/100.f; }
     forge::endCard();
     ImGui::EndChild();
     ImGui::Dummy({0, px(4)});
     const float gap = ImGui::GetStyle().ItemSpacing.x, w = (ImGui::GetContentRegionAvail().x-2*gap)/3, h = px(38);
-    if (forge::button("Standard", {w, h})) { oneClick_ = OneClickConfig{}; oneClickNoise_ = 15; }
+    if (forge::button(tr("Standard"), {w, h})) { oneClick_ = OneClickConfig{}; oneClickNoise_ = 15; }
     ImGui::SameLine(); if (forge::button("Abbrechen##oc", {w, h})) ImGui::CloseCurrentPopup();
     ImGui::SameLine(); if (forge::primaryButton(IC_PLAY "  Start##oc", {w, h})) { saveOneClickConfig(oneClick_, configPath()); ImGui::CloseCurrentPopup(); startOneClick(); }
     forge::noteItem("Start");
@@ -715,17 +716,17 @@ void EditUi::startOneClick() {
     auto result = std::make_shared<Mesh>(); auto report = std::make_shared<OneClickReport>(); auto error = std::make_shared<std::string>();
     if (!fromScan) *result = base_;
     const bool hadMesh = hasMesh();
-    startJob("Ein-Klick-Prozess", [=, this] {
-        if (fromScan) { setProgress("Netz wird berechnet", 0); if (!source_.build(voxel, minWeight, true, *result, *error)) return; }
+    startJob(tr("Ein-Klick-Prozess"), [=, this] {
+        if (fromScan) { setProgress(tr("Netz wird berechnet"), 0); if (!source_.build(voxel, minWeight, true, *result, *error)) return; }
         *report = runOneClick(*result, cfg, [this](const char* step, float f) { setProgress(step, f); });
     }, [=, this] {
-        if (!error->empty() || result->indices.empty()) { const std::string text = error->empty() ? "Das Netz ist leer." : *error; if (onError) onError(text); return; }
+        if (!error->empty() || result->indices.empty()) { const std::string text = error->empty() ? tr("Das Netz ist leer.") : *error; if (onError) onError(text); return; }
         if (hadMesh) {
             history_.push(base_); base_ = std::move(*result);
             if (fromScan) { voxelMm_ = voxel; updateOutPath(voxel); }
             meshChanged(false);
         } else newMesh(std::move(*result), voxel);
-        char b[240]; snprintf(b, sizeof b, "Ein-Klick-Prozess fertig: %d Teile entfernt, %s gefüllt, %d offen, %s Dreiecke.", report->partsRemoved, holesText(report->holesClosed).c_str(), report->holesLeft, grouped(report->trianglesAfter).c_str());
+        char b[240]; snprintf(b, sizeof b, tr("Ein-Klick-Prozess fertig: %d Teile entfernt, %s gefüllt, %d offen, %s Dreiecke."), report->partsRemoved, holesText(report->holesClosed).c_str(), report->holesLeft, grouped(report->trianglesAfter).c_str());
         oneClickReport_ = b; forge::toast(b, forge::Toast::Success);
     });
 }

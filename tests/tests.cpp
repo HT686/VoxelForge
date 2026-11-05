@@ -15,6 +15,7 @@
 #include <fstream>
 #include <filesystem>
 #include "pipeline.hpp"
+#include "i18n.hpp"
 #include "settings.hpp"
 #include "register.hpp"
 
@@ -499,6 +500,26 @@ int main() {
         CHECK(worst < .1f && minZ > 199.f, "Punktwolke: nur die Ebene, kein einzelner Ausreisser (Abweichung %.2f)", worst);
         CHECK(facing, "Punktwolke: Normalen zeigen zur Kamera");
         CHECK(s.cloud && s.cloud->indices.empty(), "Punktwolke: reine Punkte");
+    }
+    // 6k2c. Languages: the system decides, English when it is none of ours, and no line may break a format.
+    {
+        CHECK(languageFrom("de_DE.UTF-8") == Language::German && languageFrom("de_AT") == Language::German && languageFrom("fr_CA.UTF-8") == Language::French && languageFrom("es_MX.UTF-8") == Language::Spanish && languageFrom("en_GB") == Language::English, "Sprache: aus dem System");
+        CHECK(languageFrom("it_IT.UTF-8") == Language::English && languageFrom("C") == Language::English && languageFrom("POSIX") == Language::English && languageFrom("") == Language::English && languageFrom("dev") == Language::English && languageFrom(nullptr) == Language::English, "Sprache: sonst Englisch");
+        const auto conversions = [](const char* s) { std::string out; for (const char* p = s; *p; p++) if (*p == '%') { p++; if (*p == '%') continue; while (*p && !strchr("dsfgxucz", *p)) p++; if (*p == 'z') p++; if (*p) out += *p; else break; } return out; };
+        int broken = 0, empty = 0, spaces = 0; for (int i = 0; i < translationCount(); i++) {
+            const char* de = translationText(i, 0); const bool isDate = !strncmp(de, "%d.%m", 5);
+            for (int l = 1; l < 4; l++) { const char* t = translationText(i, l); if (!*t) empty++; if (!isDate && conversions(de) != conversions(t)) { broken++; printf("     Platzhalter: %s\n", t); } const size_t a = strlen(de), b = strlen(t); if (a && b && ((de[a-1] == ' ') != (t[b-1] == ' ') || (de[0] == ' ') != (t[0] == ' '))) { spaces++; printf("     Leerzeichen am Rand: %s\n", t); } }
+        }
+        CHECK(translationCount() > 300 && !empty, "Sprachen: alle %d Texte vorhanden", translationCount());
+        CHECK(!broken, "Sprachen: Platzhalter stimmen ueberall (%d Abweichungen)", broken);
+        CHECK(!spaces, "Sprachen: Leerzeichen am Rand stimmen ueberall (%d Abweichungen)", spaces);
+        const Language before = language(); setLanguage(Language::French);
+        CHECK(!strcmp(tr("Speichern"), "Enregistrer"), "Sprachen: Uebersetzung (%s)", tr("Speichern"));
+        CHECK(!strcmp(tr("Speichern##proj"), "Enregistrer##proj"), "Sprachen: die ID bleibt (%s)", tr("Speichern##proj"));
+        CHECK(!strcmp(tr("\xEE\x85\x8D  Speichern##x"), "\xEE\x85\x8D  Enregistrer##x"), "Sprachen: das Symbol bleibt");
+        CHECK(!strcmp(tr("Scan_17"), "Scan_17"), "Sprachen: Unbekanntes bleibt, wie es ist");
+        CHECK(trf("Wird in %s geöffnet", "Bambu Studio") == "Ouverture dans Bambu Studio", "Sprachen: Wert im Satz");
+        setLanguage(Language::German); CHECK(!strcmp(tr("Speichern"), "Speichern"), "Sprachen: Deutsch ist das Original"); setLanguage(before);
     }
     // 6k3. What the program remembers, and where new projects go.
     {

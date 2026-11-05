@@ -1,4 +1,5 @@
 #include "measure.hpp"
+#include "i18n.hpp"
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
@@ -91,15 +92,15 @@ BoxReport measureBox(const Mesh& m, double minArea, double tol, int maxPlanes) {
 
 bool loadStl(const std::string& path, Mesh& out, std::string& error) {
     FILE* f = fopen(path.c_str(), "rb");
-    if (!f) { error = "Datei nicht lesbar: " + path; return false; }
+    if (!f) { error = tr("Datei nicht lesbar: ") + path; return false; }
     char hdr[80]; uint32_t n = 0;
-    if (fread(hdr, 1, 80, f) != 80 || fread(&n, 4, 1, f) != 1) { fclose(f); error = "Keine gueltige STL-Datei"; return false; }
+    if (fread(hdr, 1, 80, f) != 80 || fread(&n, 4, 1, f) != 1) { fclose(f); error = tr("Keine gültige STL-Datei"); return false; }
     fseek(f, 0, SEEK_END); long len = ftell(f); fseek(f, 84, SEEK_SET);
-    if (len != 84 + 50L*(long)n) { fclose(f); error = "Nur binaere STL-Dateien werden unterstuetzt"; return false; }
+    if (len != 84 + 50L*(long)n) { fclose(f); error = tr("Nur binäre STL-Dateien werden unterstützt"); return false; }
     out = Mesh{}; out.vertices.reserve((size_t)n*3); out.indices.reserve((size_t)n*3);
     for (uint32_t t = 0; t < n; t++) {
         float rec[12]; uint16_t attr;
-        if (fread(rec, 4, 12, f) != 12 || fread(&attr, 2, 1, f) != 1) { fclose(f); error = "STL-Datei ist abgeschnitten"; return false; }
+        if (fread(rec, 4, 12, f) != 12 || fread(&attr, 2, 1, f) != 1) { fclose(f); error = tr("STL-Datei ist abgeschnitten"); return false; }
         for (int k = 0; k < 3; k++) { out.indices.push_back((uint32_t)out.vertices.size()); out.vertices.push_back(V3{rec[3+3*k], rec[4+3*k], rec[5+3*k]}); }
     }
     fclose(f);

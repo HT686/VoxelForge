@@ -4,6 +4,7 @@
 #include <cmath>
 #include <deque>
 #include "font_data.hpp"
+#include "i18n.hpp"
 #include "theme.hpp"
 
 namespace forge {
@@ -61,13 +62,14 @@ static float animate(ImGuiID id, bool target, float speed = 14.f) {
 static ImVec4 mix(const ImVec4& a, const ImVec4& b, float t) { return ImVec4(a.x+(b.x-a.x)*t, a.y+(b.y-a.y)*t, a.z+(b.z-a.z)*t, a.w+(b.w-a.w)*t); }
 static const char* visibleEnd(const char* label) { return ImGui::FindRenderedTextEnd(label); }
 
-bool button(const char* label, ImVec2 size) { const bool r = ImGui::Button(label, size); noteItem(label); return r; }
+bool button(const char* label, ImVec2 size) { const bool r = ImGui::Button(tr(label), size); noteItem(label); return r; }
 bool primaryButton(const char* label, ImVec2 size) {
+    const char* const rawLabel = label; (void)rawLabel; label = tr(label);
     ImGuiWindow* w = ImGui::GetCurrentWindow(); if (w->SkipItems) return false;
     const ImVec2 ts = ImGui::CalcTextSize(label, nullptr, true); const ImGuiStyle& st = ImGui::GetStyle();
     const ImVec2 sz = ImGui::CalcItemSize(size, ts.x+st.FramePadding.x*2, ts.y+st.FramePadding.y*2);
     const ImVec2 p = ImGui::GetCursorScreenPos();
-    const bool r = ImGui::InvisibleButton(label, sz); noteItem(label);
+    const bool r = ImGui::InvisibleButton(label, sz); noteItem(rawLabel);
     const bool hov = ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled), act = ImGui::IsItemActive(); const float a = ImGui::GetStyle().Alpha;
     ImDrawList* dl = ImGui::GetWindowDrawList(); const ImVec2 q{p.x+sz.x, p.y+sz.y}; const float h = animate(ImGui::GetItemID(), hov && !act);
     if (hov && !act && a > .9f) for (int i = 3; i >= 1; i--) dl->AddRectFilled({p.x-i*1.5f, p.y-i*1.5f}, {q.x+i*1.5f, q.y+i*1.5f}, col(orange, .07f*h), st.FrameRounding+i*1.5f);
@@ -95,11 +97,12 @@ bool iconButton(const char* icon, const char* key, const char* tooltip, bool on,
     if (on) dl->AddRectFilled(p, q, col(sky, (.18f+.08f*h)*a), px(9)); else if (h > .01f || act) dl->AddRectFilled(p, q, col(act ? pressed : hover, std::max(h, act ? 1.f : 0.f)*a), px(9));
     ImGui::PushFont(fontIcon); const ImVec2 ts = ImGui::CalcTextSize(icon);
     dl->AddText({p.x+(s-ts.x)/2, p.y+(s-ts.y)/2+px(3)}, col(on ? sky : mix(textDim, text, h), a), icon); ImGui::PopFont();
-    if (tooltip && hov && ImGui::GetCurrentContext()->HoveredIdTimer > .35f) { ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, {px(10), px(7)}); ImGui::SetTooltip("%s", tooltip); ImGui::PopStyleVar(); }
+    if (tooltip && hov && ImGui::GetCurrentContext()->HoveredIdTimer > .35f) { ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, {px(10), px(7)}); ImGui::SetTooltip("%s", tr(tooltip)); ImGui::PopStyleVar(); }
     ImGui::PopID(); return r;
 }
 bool toolTile(const char* icon, const char* label, ImVec2 size, bool on) {
-    ImGui::PushID(label); const ImVec2 p = ImGui::GetCursorScreenPos(); const bool r = ImGui::InvisibleButton("##tile", size); noteItem(label);
+    const char* const rawLabel = label; (void)rawLabel; label = tr(label);
+    ImGui::PushID(label); const ImVec2 p = ImGui::GetCursorScreenPos(); const bool r = ImGui::InvisibleButton("##tile", size); noteItem(rawLabel);
     const bool hov = ImGui::IsItemHovered(), act = ImGui::IsItemActive(); const float a = ImGui::GetStyle().Alpha; const float h = animate(ImGui::GetItemID(), hov);
     ImDrawList* dl = ImGui::GetWindowDrawList(); const ImVec2 q{p.x+size.x, p.y+size.y}; const float rnd = px(11);
     dl->AddRectFilled(p, q, col(on ? alpha(sky, .16f) : mix(raised, hover, act ? 1.f : h), a), rnd);
@@ -111,8 +114,9 @@ bool toolTile(const char* icon, const char* label, ImVec2 size, bool on) {
     ImGui::PopID(); return r;
 }
 bool navItem(const char* icon, const char* label, bool on, float height) {
+    const char* const rawLabel = label; (void)rawLabel; label = tr(label);
     ImGui::PushID(label); ImGui::PushFont(fontMedium); const ImVec2 ls = ImGui::CalcTextSize(label); const ImVec2 is = ImGui::CalcTextSize(icon); const ImVec2 sz{ls.x+is.x+px(32), height};
-    const ImVec2 p = ImGui::GetCursorScreenPos(); const bool r = ImGui::InvisibleButton("##nav", sz); noteItem(label);
+    const ImVec2 p = ImGui::GetCursorScreenPos(); const bool r = ImGui::InvisibleButton("##nav", sz); noteItem(rawLabel);
     const bool hov = ImGui::IsItemHovered(); const float h = animate(ImGui::GetItemID(), hov), a = ImGui::GetStyle().Alpha; ImDrawList* dl = ImGui::GetWindowDrawList();
     if (on) dl->AddRectFilled(p, {p.x+sz.x, p.y+sz.y}, col(raised, a), px(9)); else if (h > .01f) dl->AddRectFilled(p, {p.x+sz.x, p.y+sz.y}, col(raised, h*.6f*a), px(9));
     if (on) dl->AddRectFilled({p.x+px(14), p.y+sz.y-px(2.5f)}, {p.x+sz.x-px(14), p.y+sz.y}, col(orange, a), px(2));
@@ -133,17 +137,18 @@ bool segmented(const char* id, int& value, const char* const* names, int n) {
     for (int i = 0; i < n; i++) {
         ImGui::SetCursorScreenPos({p.x+pad+i*cell, p.y}); ImGui::PushID(i);
         if (ImGui::InvisibleButton("##seg", {cell, h})) { changed = value != i; value = i; }
-        noteItem(names[i]);
-        const bool hov = ImGui::IsItemHovered(); ImGui::PushFont(fontMedium); const ImVec2 ts = ImGui::CalcTextSize(names[i], nullptr, true);
-        dl->AddText({p.x+pad+i*cell+(cell-ts.x)/2, p.y+(h-ts.y)/2}, col(value == i ? text : hov ? text : textDim, a), names[i], visibleEnd(names[i])); ImGui::PopFont();
+        noteItem(names[i]); const char* const name = tr(names[i]);
+        const bool hov = ImGui::IsItemHovered(); ImGui::PushFont(fontMedium); const ImVec2 ts = ImGui::CalcTextSize(name, nullptr, true);
+        dl->AddText({p.x+pad+i*cell+(cell-ts.x)/2, p.y+(h-ts.y)/2}, col(value == i ? text : hov ? text : textDim, a), name, visibleEnd(name)); ImGui::PopFont();
         ImGui::PopID();
     }
     ImGui::SetCursorScreenPos(p); ImGui::Dummy({w, h}); ImGui::PopID(); return changed;
 }
 static bool sliderCore(const char* label, float* t01, const char* valueText) {
+    const char* const rawLabel = label; (void)rawLabel; label = tr(label);
     ImGui::PushID(label); const float w = ImGui::GetContentRegionAvail().x; const ImVec2 p = ImGui::GetCursorScreenPos(); const float a = ImGui::GetStyle().Alpha;
     const float lineH = ImGui::GetTextLineHeight(), h = lineH+px(20);
-    ImGui::InvisibleButton("##sl", {w, h}); noteItem(label);
+    ImGui::InvisibleButton("##sl", {w, h}); noteItem(rawLabel);
     const bool act = ImGui::IsItemActive(), hov = ImGui::IsItemHovered(); bool changed = false;
     const float trackY = p.y+lineH+px(11), x0 = p.x+px(7), x1 = p.x+w-px(7);
     if (act) { const float nv = std::clamp((ImGui::GetIO().MousePos.x-x0)/(x1-x0), 0.f, 1.f); if (nv != *t01) { *t01 = nv; changed = true; } }
@@ -169,8 +174,9 @@ bool sliderInt(const char* label, int* v, int lo, int hi, const char* format) {
     const int nv = lo+(int)std::lround(t*(hi-lo)); if (nv == *v) return false; *v = nv; return true;
 }
 bool toggle(const char* label, bool* v) {
+    const char* const rawLabel = label; (void)rawLabel; label = tr(label);
     ImGui::PushID(label); const float h = ImGui::GetTextLineHeight()+px(4), w = h*1.75f, total = ImGui::GetContentRegionAvail().x; const ImVec2 p = ImGui::GetCursorScreenPos(); const float a = ImGui::GetStyle().Alpha;
-    const bool r = ImGui::InvisibleButton("##tg", {total, h}); noteItem(label); if (r) *v = !*v;
+    const bool r = ImGui::InvisibleButton("##tg", {total, h}); noteItem(rawLabel); if (r) *v = !*v;
     const bool hov = ImGui::IsItemHovered(); const float t = animate(ImGui::GetID("##pos"), *v, 16.f);
     ImDrawList* dl = ImGui::GetWindowDrawList(); const float x = p.x+total-w;
     dl->AddText({p.x, p.y+px(2)}, col(hov ? text : mix(textDim, text, .4f), a), label, visibleEnd(label));
@@ -179,18 +185,19 @@ bool toggle(const char* label, bool* v) {
     ImGui::PopID(); return r;
 }
 bool combo(const char* label, int* current, const char* const* names, int n) {
+    const char* const rawLabel = label; (void)rawLabel; label = tr(label);
     ImGui::PushID(label); bool changed = false;
     if (*label != '#') { ImGui::PushStyleColor(ImGuiCol_Text, textDim); ImGui::TextUnformatted(label, visibleEnd(label)); ImGui::PopStyleColor(); }
     ImGui::SetNextItemWidth(-1);
-    const bool open = ImGui::BeginCombo("##c", names[*current]); noteItem(label);
-    if (open) { for (int i = 0; i < n; i++) { if (ImGui::Selectable(names[i], *current == i)) { changed = *current != i; *current = i; } noteItem(names[i]); } ImGui::EndCombo(); }
+    const bool open = ImGui::BeginCombo("##c", tr(names[*current])); noteItem(rawLabel);
+    if (open) { for (int i = 0; i < n; i++) { if (ImGui::Selectable(tr(names[i]), *current == i)) { changed = *current != i; *current = i; } noteItem(names[i]); } ImGui::EndCombo(); }
     ImGui::PopID(); return changed;
 }
 void beginCard(const char* id, const char* title, const char* icon) {
     ImGui::PushStyleColor(ImGuiCol_ChildBg, raised); ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, px(12)); ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, {px(12), px(12)});
     ImGui::BeginChild(id, {-FLT_MIN, 0}, ImGuiChildFlags_AutoResizeY | ImGuiChildFlags_AlwaysUseWindowPadding, ImGuiWindowFlags_NoScrollbar);
     ImGui::PushStyleColor(ImGuiCol_FrameBg, bg); ImGui::PushStyleColor(ImGuiCol_Button, hover); ImGui::PushStyleColor(ImGuiCol_ButtonHovered, pressed);
-    if (title) {
+    if (title) { title = tr(title);
         ImGui::PushFont(fontTitle);
         if (icon) { ImGui::PushStyleColor(ImGuiCol_Text, sky); ImGui::TextUnformatted(icon); ImGui::PopStyleColor(); ImGui::SameLine(0, px(8)); }
         ImGui::TextUnformatted(title); ImGui::PopFont(); ImGui::Dummy({0, px(2)});
@@ -199,22 +206,24 @@ void beginCard(const char* id, const char* title, const char* icon) {
 void endCard() { ImGui::PopStyleColor(3); ImGui::EndChild(); ImGui::PopStyleVar(2); ImGui::PopStyleColor(); ImGui::Dummy({0, px(2)}); }
 bool collapsible(const char* label, bool defaultOpen) {
     ImGui::PushStyleColor(ImGuiCol_Header, ImVec4(0, 0, 0, 0)); ImGui::PushStyleColor(ImGuiCol_HeaderHovered, hover); ImGui::PushStyleColor(ImGuiCol_HeaderActive, pressed); ImGui::PushFont(fontMedium);
-    const bool open = ImGui::CollapsingHeader(label, defaultOpen ? ImGuiTreeNodeFlags_DefaultOpen : 0); noteItem(label); ImGui::PopFont(); ImGui::PopStyleColor(3); return open;
+    const bool open = ImGui::CollapsingHeader(tr(label), defaultOpen ? ImGuiTreeNodeFlags_DefaultOpen : 0); noteItem(label); ImGui::PopFont(); ImGui::PopStyleColor(3); return open;
 }
-void hint(const char* t) { ImGui::PushStyleColor(ImGuiCol_Text, textDim); ImGui::TextWrapped("%s", t); ImGui::PopStyleColor(); }
+void hint(const char* t) { ImGui::PushStyleColor(ImGuiCol_Text, textDim); ImGui::TextWrapped("%s", tr(t)); ImGui::PopStyleColor(); }
 void labelValue(const char* label, const char* value, const ImVec4& color) {
+    label = tr(label); value = tr(value);
     ImGui::PushStyleColor(ImGuiCol_Text, textDim); ImGui::TextUnformatted(label); ImGui::PopStyleColor();
     ImGui::PushFont(fontMedium); const float w = ImGui::CalcTextSize(value).x; ImGui::SameLine(ImGui::GetContentRegionMax().x-w); ImGui::PushStyleColor(ImGuiCol_Text, color); ImGui::TextUnformatted(value); ImGui::PopStyleColor(); ImGui::PopFont();
 }
 static ImVec2 chipSize(const char* t, const char* icon) { ImVec2 s = ImGui::CalcTextSize(t); float w = s.x+px(20); if (icon) w += ImGui::CalcTextSize(icon).x+px(6); return {w, s.y+px(10)}; }
 void chipAt(ImDrawList* dl, ImVec2 p, const char* t, const ImVec4& color, const char* icon) {
+    t = tr(t);
     ImGui::PushFont(fontMedium); const ImVec2 sz = chipSize(t, icon); const float a = ImGui::GetStyle().Alpha;
     dl->AddRectFilled(p, {p.x+sz.x, p.y+sz.y}, col(ImVec4(.05f, .065f, .09f, .88f), a), sz.y/2);
     dl->AddRect(p, {p.x+sz.x, p.y+sz.y}, col(alpha(color, .32f), a), sz.y/2);
     float x = p.x+px(10); if (icon) { dl->AddText({x, p.y+px(5)}, col(color, a), icon); x += ImGui::CalcTextSize(icon).x+px(6); }
     dl->AddText({x, p.y+px(5)}, col(color, a), t); ImGui::PopFont();
 }
-void chip(const char* t, const ImVec4& color, const char* icon) { ImGui::PushFont(fontMedium); const ImVec2 sz = chipSize(t, icon); ImGui::PopFont(); const ImVec2 p = ImGui::GetCursorScreenPos(); ImGui::Dummy(sz); chipAt(ImGui::GetWindowDrawList(), p, t, color, icon); }
+void chip(const char* t, const ImVec4& color, const char* icon) { t = tr(t); ImGui::PushFont(fontMedium); const ImVec2 sz = chipSize(t, icon); ImGui::PopFont(); const ImVec2 p = ImGui::GetCursorScreenPos(); ImGui::Dummy(sz); chipAt(ImGui::GetWindowDrawList(), p, t, color, icon); }
 void spinner(ImDrawList* dl, ImVec2 c, float r, const ImVec4& color) {
     const float t = (float)ImGui::GetTime()*4.5f; const float a0 = t, a1 = t+3.14159f*1.35f;
     dl->PathArcTo(c, r, a0, a1, 32); dl->PathStroke(col(color), 0, px(2.5f));
@@ -227,7 +236,8 @@ void beginFloating(const char* id, ImVec2 pos, ImVec2 size) {
 void endFloating() { ImGui::EndChild(); ImGui::PopStyleVar(4); ImGui::PopStyleColor(2); }
 
 namespace { struct ToastItem { std::string text; Toast kind; double born; }; std::deque<ToastItem> toasts; }
-void toast(const std::string& t, Toast kind) {
+void toast(const std::string& raw, Toast kind) {
+    const std::string t = tr(raw.c_str());
     for (const ToastItem& i : toasts) if (i.text == t) return;
     toasts.push_back({t, kind, ImGui::GetTime()}); while (toasts.size() > 4) toasts.pop_front();
 }
@@ -250,6 +260,7 @@ void drawToasts() {
     }
 }
 void busyOverlay(ImVec2 pos, ImVec2 size, const char* title, float progress) {
+    title = tr(title);
     ImDrawList* dl = ImGui::GetWindowDrawList(); dl->AddRectFilled(pos, {pos.x+size.x, pos.y+size.y}, col(ImVec4(.03f, .04f, .06f, .55f)), px(14));
     const float w = px(320), h = px(92); const ImVec2 p{pos.x+(size.x-w)/2, pos.y+(size.y-h)/2};
     dl->AddRectFilled(p, {p.x+w, p.y+h}, col(raised), px(14)); dl->AddRect(p, {p.x+w, p.y+h}, col(line), px(14));
@@ -261,7 +272,7 @@ void busyOverlay(ImVec2 pos, ImVec2 size, const char* title, float progress) {
 }
 bool imageTile(unsigned texture, const char* letter, const ImVec4& color, const char* label, ImVec2 size, bool dim) {
     const ImVec2 p = ImGui::GetCursorScreenPos(), q{p.x+size.x, p.y+size.y}; ImGui::PushID(label);
-    const bool pressedNow = ImGui::InvisibleButton("##tile", size), hov = ImGui::IsItemHovered(), held = ImGui::IsItemActive(); noteItem(label); ImGui::PopID();
+    const bool pressedNow = ImGui::InvisibleButton("##tile", size), hov = ImGui::IsItemHovered(), held = ImGui::IsItemActive(); noteItem(label); ImGui::PopID(); label = tr(label);
     ImDrawList* dl = ImGui::GetWindowDrawList(); const float r = px(10), alphaAll = dim ? .45f : 1.f;
     dl->AddRectFilled(p, q, col(held ? pressed : hov ? hover : raised), r);
     dl->AddRect(p, q, col(hov ? lineStrong : line), r);

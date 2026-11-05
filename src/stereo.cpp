@@ -1,4 +1,5 @@
 #include "stereo.hpp"
+#include "i18n.hpp"
 #include "gpustereo.hpp"
 #include <algorithm>
 #include <bit>
@@ -230,7 +231,7 @@ bool StereoMatcher::gpuReady() {
     if (compute_mode == ComputeMode::Cpu) return false;
     if (!gpuTried_) {
         gpuTried_ = true;
-        if (getenv("VOXELFORGE_NO_GPU")) { gpuInfo_ = "Abgeschaltet"; return false; }
+        if (getenv("VOXELFORGE_NO_GPU")) { gpuInfo_ = tr("Abgeschaltet"); return false; }
         gpu_ = std::make_unique<GpuStereo>(); gpuUsable_ = gpu_->init(); gpuInfo_ = gpu_->info();
     }
     return gpuUsable_;
@@ -248,7 +249,7 @@ void StereoMatcher::checkGpuAgainstCpu(const uint8_t* ref, const uint8_t* other,
     if (both < kMinCells) { gpuCheckIn_ = 1; shift_.swap(fromCard); return; }   // nothing to compare yet
     gpuCheckIn_ = kEveryFrames;
     if (far > kMaxDifferent*both || one > kMaxDifferent*both) {
-        char b[160]; snprintf(b, sizeof b, "Weicht von der CPU ab (%.1f %% der Punkte), Grafikkarte abgeschaltet.", 100.0*(far+one)/both);
+        char b[160]; snprintf(b, sizeof b, tr("Weicht von der CPU ab (%.1f %% der Punkte), Grafikkarte abgeschaltet."), 100.0*(far+one)/both);
         gpuUsable_ = false; gpuThisFrame_ = false; gpuInfo_ = b; return;   // keeps the CPU result
     }
     shift_.swap(fromCard);

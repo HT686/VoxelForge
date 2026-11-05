@@ -1,4 +1,5 @@
 #include "slicers.hpp"
+#include "i18n.hpp"
 #define GL_GLEXT_PROTOTYPES
 #include <GL/gl.h>
 #include <png.h>

@@ -4,12 +4,11 @@
 
 **Open source 3D scanning for Linux.** A native application for the Creality CR-Scan Otter, without Wine and without a cloud account: scan, align several scans, repair the mesh, and open the result in your slicer.
 
-> The user interface is German in this release. English, French and Spanish are the next step and will follow the system language. See the [manual](docs/MANUAL.md) for what each German label means.
-
 ![The mesh view with a finished scan](docs/images/mesh.png)
 
 ## Features
 
+- **Your language:** German, English, French or Spanish, following the system language, with English as the fallback
 - **Live scanning** with a turntable or by hand, held level or upright, at the scanner's full 30 frames per second
 - **Marker tracking** with a guide for the distance that gives the most detail
 - **Several scans, one model:** automatic or manual alignment, fine alignment, and removal of stray points
@@ -51,13 +50,13 @@ git clone https://github.com/HT686/VoxelForge.git && cd VoxelForge
 
 ## Quick start
 
-1. Start VoxelForge and choose **Neues Projekt** (new project). Give it a name and a place.
+1. Start VoxelForge and choose **New project**. Give it a name and a place.
 2. Put the object in the middle of a turntable with markers. At least five markers should stay in view.
 3. Keep the dot of the distance bar in the bright green range, about 13 to 20 cm for small objects. Closer gives much more detail.
-4. Press **Scan starten** and turn the object slowly, one turn in about 15 seconds.
-5. For the other sides, press **Neuer Scan**, lay the object on another side and scan again.
-6. Press **Ausrichten** and then **Fusion** to join the scans.
-7. Press **Ein-Klick-Prozess** to repair the model, then export it or open it in your slicer.
+4. Press **Start scan** and turn the object slowly, one turn in about 15 seconds.
+5. For the other sides, press **New scan**, lay the object on another side and scan again.
+6. Press **Align** and then **Fusion** to join the scans.
+7. Press **One-click process** to repair the model, then export it or open it in your slicer.
 
 The [manual](docs/MANUAL.md) explains every step and setting.
 

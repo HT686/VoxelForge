@@ -22,6 +22,7 @@
 #include <fstream>
 #include <sstream>
 #include "device.hpp"
+#include "i18n.hpp"
 #include "editui.hpp"
 #include "filedialog.hpp"
 #include "homeui.hpp"
@@ -38,7 +39,7 @@ struct Shared {
     int irW = 0, irH = 0, depthW = 0, depthH = 0, prevW = 0, prevH = 0;
     bool newIr = false, newDepth = false, newPreview = false;
     PipelineStats stats;
-    std::string status = "Suche Scanner ...", deviceInfo;
+    std::string status = tr("Suche Scanner ..."), deviceInfo;
     bool connected = false, colorAvailable = false;
     float fps = 0;
     int exposure = 3000;
@@ -90,11 +91,11 @@ void worker(Shared& sh, Commands& cmd, Pipeline& pipe) {
                 pipe.setColorCalib(haveColor ? cc : ColorCalib{});
                 std::lock_guard<std::mutex> g(sh.m); sh.deviceInfo = dev.description(); sh.colorAvailable = haveColor;
             }
-            setStatus("Verbunden", true); misses = 0;
+            setStatus(tr("Verbunden"), true); misses = 0;
         }
         if (pairFor(cmd.size.load()) != activePair) { dev.close(); continue; }   // changing pairs needs a stream restart
         if (!dev.nextPair(f, 700)) {
-            if (++misses >= 3) { dev.close(); setStatus("Verbindung zum Scanner verloren, versuche erneut ...", false); }
+            if (++misses >= 3) { dev.close(); setStatus(tr("Verbindung zum Scanner verloren, versuche erneut ..."), false); }
             continue;
         }
         misses = 0;
@@ -167,7 +168,7 @@ public:
         if (c == "idle") { if (edit.busy() || project.busy()) return; }
         else if (c == "wait") wait_ = std::atoi(rest.c_str());
         else if (c == "press") {
-            auto& known = forge::buttonPositions(); auto it = known.find(rest);
+            auto& known = forge::buttonPositions(); auto it = known.find(rest); if (it == known.end()) it = known.find(tr(rest.c_str()));   // some carry the translated name
             if (it == known.end()) { printf("SKRIPT: unbekannte Schaltfläche %s\n", rest.c_str()); fflush(stdout); }
             else if (!armed_) { setPos(io, it->second.x, it->second.y); armed_ = true; wait_ = 2; return; }
             else { io.AddMouseButtonEvent(0, true); armed_ = false; release_ = true; wait_ = 1; pos_++; return; }
@@ -223,14 +224,14 @@ static void pictureInPicture(ImDrawList* dl, GLuint tex, ImVec2 p, ImVec2 size, 
 }
 
 int main() {
-    if (!glfwInit()) { fprintf(stderr, "Grafik konnte nicht gestartet werden.\n"); return 1; }
+    if (!glfwInit()) { fprintf(stderr, tr("Grafik konnte nicht gestartet werden.\n")); return 1; }
     glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3); glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
     glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
     int winW = 1500, winH = 920; if (const char* size = getenv("VOXELFORGE_WINDOW")) sscanf(size, "%dx%d", &winW, &winH);
     // On Wayland the desktop finds name and icon through this id: it must match voxelforge.desktop.
     { const char* flatpakId = getenv("FLATPAK_ID"); glfwWindowHintString(GLFW_WAYLAND_APP_ID, flatpakId ? flatpakId : "voxelforge"); } glfwWindowHintString(GLFW_X11_CLASS_NAME, "voxelforge"); glfwWindowHintString(GLFW_X11_INSTANCE_NAME, "voxelforge");
     GLFWwindow* win = glfwCreateWindow(winW, winH, "VoxelForge", nullptr, nullptr);
-    if (!win) { fprintf(stderr, "OpenGL 3.3 wird benoetigt, Fenster konnte nicht erstellt werden.\n"); return 1; }
+    if (!win) { fprintf(stderr, tr("OpenGL 3.3 wird benötigt, Fenster konnte nicht erstellt werden.\n")); return 1; }
     glfwMakeContextCurrent(win); glfwSwapInterval(1);
     IMGUI_CHECKVERSION(); ImGui::CreateContext(); ImGuiIO& io = ImGui::GetIO(); io.IniFilename = nullptr;
     float xs = 1, ys = 1; glfwGetWindowContentScale(win, &xs, &ys);
@@ -281,22 +282,22 @@ int main() {
     home.onNewProject = [&](const std::string& file) { startClean(); std::string err; if (project.createProject(file, err)) tab = Tab::Scan; else forge::toast(err, forge::Toast::Error); };
     home.onOpenProject = [&](const std::string& file) { startClean(); project.closeProject(); project.loadFile(file); tab = Tab::Scan; };
     home.onComputeMode = [&](int m) { cmd.compute = m; };
-    home.computeInfo = [&] { std::lock_guard<std::mutex> g(sh.m); if (!sh.connected) return std::string("Wird beim Verbinden des Scanners geprüft."); return std::string(sh.usingGpu ? "Stereo rechnet gerade auf: " : "Stereo rechnet gerade auf der CPU. ")+(sh.gpuInfo == "Nicht verwendet" ? "" : sh.gpuInfo); };
+    home.computeInfo = [&] { std::lock_guard<std::mutex> g(sh.m); if (!sh.connected) return std::string(tr("Wird beim Verbinden des Scanners geprüft.")); return std::string(sh.usingGpu ? tr("Stereo rechnet gerade auf: ") : tr("Stereo rechnet gerade auf der CPU. "))+(sh.gpuInfo == "Nicht verwendet" ? "" : tr(sh.gpuInfo.c_str())); };
     home.onOpenModel = [&](const std::string& file) { edit.loadFile(file); };
     home.onResume = [&] { tab = edit.hasMesh() && !project.hasScans() ? Tab::Mesh : Tab::Scan; };
     home.currentName = [&] { return project.hasProject() ? project.projectName() : std::string(); };
     home.hasUnsavedWork = [&] { return project.hasUnsaved() || scanning || integratedFrames.load() > 0; };
     edit.printCard = [&] {
-        forge::beginCard("##print", "3D-Druck", IC_PRINTER);
+        forge::beginCard("##print", tr("3D-Druck"), IC_PRINTER);
         const float gap = ImGui::GetStyle().ItemSpacing.x, w = (ImGui::GetContentRegionAvail().x-2*gap)/3; const ImVec2 tile{w, forge::px(82)}; const Slicer* sl = home.slicers();
         ImGui::BeginDisabled(!edit.hasMesh() || edit.busy());
         for (int i = 0; i < kSlicerCount; i++) {
             if (i) ImGui::SameLine(0, gap); const Slicer& s = sl[i];
             if (forge::imageTile(s.texture, s.letter, ImVec4(s.color[0], s.color[1], s.color[2], 1), s.name, tile, !s.found)) {
-                if (!s.found) { forge::toast(std::string(s.name)+" wurde nicht gefunden. Pfad in den Einstellungen angeben.", forge::Toast::Warning); home.requestSettings(); }
-                else { const Slicer* one = &sl[i]; edit.exportForPrint([one](const std::string& file) { if (openInSlicer(*one, file)) forge::toast(std::string("Wird in ")+one->name+" geöffnet", forge::Toast::Success); else forge::toast(std::string(one->name)+" ließ sich nicht starten.", forge::Toast::Error); }); }
+                if (!s.found) { forge::toast(trf("%s wurde nicht gefunden. Pfad in den Einstellungen angeben.", s.name), forge::Toast::Warning); home.requestSettings(); }
+                else { const Slicer* one = &sl[i]; edit.exportForPrint([one](const std::string& file) { if (openInSlicer(*one, file)) forge::toast(trf("Wird in %s geöffnet", one->name), forge::Toast::Success); else forge::toast(trf("%s ließ sich nicht starten.", one->name), forge::Toast::Error); }); }
             }
-            if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", s.found ? (std::string("In ")+s.name+" öffnen").c_str() : "Nicht gefunden. Pfad in den Einstellungen angeben.");
+            if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", s.found ? trf("In %s öffnen", s.name).c_str() : tr("Nicht gefunden. Pfad in den Einstellungen angeben."));
         }
         ImGui::EndDisabled();
         forge::endCard();
@@ -326,7 +327,7 @@ int main() {
         if (meshReady.exchange(false)) {
             if (meshThread.joinable()) meshThread.join();
             if (!scanMesh.indices.empty()) { repairManifold(scanMesh); edit.newMesh(std::move(scanMesh), scanMeshVoxel); scanMesh = Mesh{}; }
-            else forge::toast("Der Scan ergibt noch kein Netz. Länger oder näher scannen.", forge::Toast::Warning);
+            else forge::toast(tr("Der Scan ergibt noch kein Netz. Länger oder näher scannen."), forge::Toast::Warning);
         }
         ImGui_ImplOpenGL3_NewFrame(); ImGui_ImplGlfw_NewFrame();
         if (script) { int dw0, dh0; glfwGetFramebufferSize(win, &dw0, &dh0); script->step(io, edit, project, win, dw0, dh0); }   // after the backend, which would overwrite the mouse
@@ -347,30 +348,30 @@ int main() {
             ImGui::SetCursorPosY((topH-logoH)/2); ImGui::Image((ImTextureID)(intptr_t)texWord.id, {logoH*kWordmarkW/kWordmarkH, logoH});
             ImGui::SameLine(panelW+forge::px(8)); ImGui::SetCursorPosY((topH-rowH)/2);
             ImGui::BeginDisabled(scanning);
-            if (forge::navItem(IC_HOUSE, "Start", tab == Tab::Home, rowH)) { home.refresh(); tab = Tab::Home; }
+            if (forge::navItem(IC_HOUSE, tr("Start"), tab == Tab::Home, rowH)) { home.refresh(); tab = Tab::Home; }
             ImGui::EndDisabled(); ImGui::SameLine(0, forge::px(4)); ImGui::SetCursorPosY((topH-rowH)/2);
-            if (forge::navItem(IC_SCAN_LINE, "Scan", tab == Tab::Scan, rowH)) { if (project.hasProject()) tab = Tab::Scan; else home.requestNew(); }
+            if (forge::navItem(IC_SCAN_LINE, tr("Scan"), tab == Tab::Scan, rowH)) { if (project.hasProject()) tab = Tab::Scan; else home.requestNew(); }
             ImGui::SameLine(0, forge::px(4)); ImGui::SetCursorPosY((topH-rowH)/2); ImGui::BeginDisabled(scanning);
-            if (forge::navItem(IC_BOX, "Mesh-Verarbeitung", tab == Tab::Mesh, rowH)) tab = Tab::Mesh;
+            if (forge::navItem(IC_BOX, tr("Mesh-Verarbeitung"), tab == Tab::Mesh, rowH)) tab = Tab::Mesh;
             ImGui::SameLine(0, forge::px(4)); ImGui::SetCursorPosY((topH-rowH)/2); ImGui::BeginDisabled(!edit.hasMesh());
-            if (forge::navItem(IC_RULER, "Schnellmessung", tab == Tab::Measure, rowH)) tab = Tab::Measure;
+            if (forge::navItem(IC_RULER, tr("Schnellmessung"), tab == Tab::Measure, rowH)) tab = Tab::Measure;
             ImGui::EndDisabled(); ImGui::EndDisabled();
             // Right side: is the scanner there, and how fast does it run?
             bool usingGpu; { std::lock_guard<std::mutex> g(sh.m); usingGpu = sh.usingGpu; }
-            char rate[64]; snprintf(rate, sizeof rate, "%.0f fps  ·  %.0f ms  ·  %s", fps, st.totalMs, usingGpu ? "GPU" : "CPU");
+            char rate[160]; snprintf(rate, sizeof rate, "%.0f fps  ·  %.0f ms  ·  %s", fps, st.totalMs, usingGpu ? "GPU" : "CPU");
             ImDrawList* dl = ImGui::GetWindowDrawList(); ImGui::PushFont(forge::fontMedium);
-            const char* devText = connected ? "Scanner verbunden" : "Kein Scanner";
+            const char* devText = connected ? tr("Scanner verbunden") : tr("Kein Scanner");
             const float w1 = ImGui::CalcTextSize(devText).x+forge::px(46), w2 = ImGui::CalcTextSize(rate).x+forge::px(46); ImGui::PopFont();
             const float helpW = forge::px(34);
             ImGui::SetCursorScreenPos({vp->Pos.x+vp->Size.x-forge::px(12)-helpW, vp->Pos.y+(topH-helpW)/2});
-            if (forge::iconButton(IC_INFO, "Hilfe", "Tastenkürzel und Hinweise (F1)", false, helpW)) helpRequest = true;
+            if (forge::iconButton(IC_INFO, tr("Hilfe"), tr("Tastenkürzel und Hinweise (F1)"), false, helpW)) helpRequest = true;
             ImGui::SetCursorScreenPos({vp->Pos.x+vp->Size.x-forge::px(16)-2*helpW, vp->Pos.y+(topH-helpW)/2});
-            if (forge::iconButton(IC_SETTINGS, "Einstellungen", "Speicherort und Slicer", false, helpW)) home.requestSettings();
+            if (forge::iconButton(IC_SETTINGS, tr("Einstellungen"), tr("Speicherort und Slicer"), false, helpW)) home.requestSettings();
             float x = vp->Pos.x+vp->Size.x-forge::px(24)-2*helpW-w1; const float y = vp->Pos.y+(topH-forge::px(28))/2;
             forge::chipAt(dl, {x, y}, devText, connected ? forge::green : forge::textDim, connected ? IC_CIRCLE_CHECK : IC_CIRCLE_X);
             if (connected) forge::chipAt(dl, {x-w2-forge::px(4), y}, rate, forge::textDim, IC_ACTIVITY);
-            if (!connected && !status.empty() && status != "Suche Scanner ...") { const ImVec2 mp = {x, y}; const ImVec2 mq{x+w1, y+forge::px(28)}; if (ImGui::IsMouseHoveringRect(mp, mq)) ImGui::SetTooltip("%s", status.c_str()); }
-            else if (connected && ImGui::IsMouseHoveringRect({x, y}, {x+w1, y+forge::px(28)})) ImGui::SetTooltip("%s%s", info.c_str(), colorAvailable ? "\nMit Farbe" : "\nOhne Farbkalibrierung");
+            if (!connected && !status.empty() && status != "Suche Scanner ...") { const ImVec2 mp = {x, y}; const ImVec2 mq{x+w1, y+forge::px(28)}; if (ImGui::IsMouseHoveringRect(mp, mq)) ImGui::SetTooltip("%s", tr(status.c_str())); }
+            else if (connected && ImGui::IsMouseHoveringRect({x, y}, {x+w1, y+forge::px(28)})) ImGui::SetTooltip("%s%s", info.c_str(), colorAvailable ? tr("\nMit Farbe") : tr("\nOhne Farbkalibrierung"));
         }
         ImGui::End(); ImGui::PopStyleVar(); ImGui::PopStyleColor();
 
@@ -386,15 +387,15 @@ int main() {
         { const ImVec2 c = vp->GetCenter(); ImGui::SetNextWindowPos(c, ImGuiCond_Appearing, {.5f, .5f}); ImGui::SetNextWindowSize({forge::px(500), 0});
           ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, {forge::px(20), forge::px(18)}); ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, forge::px(16)); ImGui::PushStyleColor(ImGuiCol_PopupBg, forge::surface);
           if (ImGui::BeginPopupModal("Hilfe", nullptr, ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoTitleBar)) {
-              ImGui::PushFont(forge::fontTitle); ImGui::TextUnformatted("Tastenkürzel"); ImGui::PopFont();
+              ImGui::PushFont(forge::fontTitle); ImGui::TextUnformatted(tr("Tastenkürzel")); ImGui::PopFont();
               forge::beginCard("##keys");
-              const char* keys[][2] = {{"Leertaste", "Scan starten oder anhalten"}, {"1, 2, 3", "Scan, Mesh-Verarbeitung, Schnellmessung"}, {"Strg+Z, Strg+Y", "Rückgängig, Wiederholen"}, {"Entf", "Auswahl löschen"}, {"Esc", "Auswahlwerkzeug verlassen"}, {"Umschalt+Links", "Drehen, während ein Werkzeug wählt"}, {"Rechte Maustaste", "Ansicht bewegen"}, {"Mausrad", "Zoomen"}, {"F1", "Diese Hilfe"}};
+              const char* keys[][2] = {{tr("Leertaste"), tr("Scan starten oder anhalten")}, {"1, 2, 3", tr("Scan, Mesh-Verarbeitung, Schnellmessung")}, {tr("Strg+Z, Strg+Y"), tr("Rückgängig, Wiederholen")}, {tr("Entf"), tr("Auswahl löschen")}, {"Esc", tr("Auswahlwerkzeug verlassen")}, {tr("Umschalt+Links"), tr("Drehen, während ein Werkzeug wählt")}, {tr("Rechte Maustaste"), tr("Ansicht bewegen")}, {tr("Mausrad"), tr("Zoomen")}, {"F1", tr("Diese Hilfe")}};
               for (auto& k : keys) forge::labelValue(k[1], k[0]);
               forge::endCard();
-              ImGui::PushFont(forge::fontTitle); ImGui::TextUnformatted("Gute Scans"); ImGui::PopFont();
-              forge::hint("Den Drehteller ganz ins Bild bringen, damit mindestens 5 Marker sichtbar bleiben. Langsam drehen, eine Umdrehung in etwa 15 Sekunden. Für Farbe den Raum gut beleuchten. Für Details nah heran: Der Tiefenfehler wächst mit dem Quadrat des Abstands, 15 cm sind fast viermal genauer als 30 cm. Die Leiste unten zeigt den besten Bereich kräftig grün.");
-              ImGui::PushFont(forge::fontTitle); ImGui::TextUnformatted("Über VoxelForge"); ImGui::PopFont();
-              forge::hint("Version " VOXELFORGE_VERSION ". Apache-2.0. Schrift Inter (SIL OFL 1.1), Symbole Lucide (ISC), Dear ImGui (MIT). „Creality“ und „CR-Scan“ sind Marken ihrer Inhaber, VoxelForge steht in keiner Verbindung zu ihnen.");
+              ImGui::PushFont(forge::fontTitle); ImGui::TextUnformatted(tr("Gute Scans")); ImGui::PopFont();
+              forge::hint(tr("Den Drehteller ganz ins Bild bringen, damit mindestens 5 Marker sichtbar bleiben. Langsam drehen, eine Umdrehung in etwa 15 Sekunden. Für Farbe den Raum gut beleuchten. Für Details nah heran: Der Tiefenfehler wächst mit dem Quadrat des Abstands, 15 cm sind fast viermal genauer als 30 cm. Die Leiste unten zeigt den besten Bereich kräftig grün."));
+              ImGui::PushFont(forge::fontTitle); ImGui::TextUnformatted(tr("Über VoxelForge")); ImGui::PopFont();
+              forge::hint(trf("Version %s. Apache-2.0. Schrift Inter (SIL OFL 1.1), Symbole Lucide (ISC), Dear ImGui (MIT). „Creality“ und „CR-Scan“ sind Marken ihrer Inhaber, VoxelForge steht in keiner Verbindung zu ihnen.", VOXELFORGE_VERSION).c_str());
               if (forge::button("Schließen##hilfe", {-FLT_MIN, forge::px(36)})) ImGui::CloseCurrentPopup();
               forge::noteItem("Schließen");
               ImGui::EndPopup();
@@ -417,45 +418,45 @@ int main() {
         else if (project.aligning()) project.alignPanel();
         else {
             const bool canSetUp = !scanning && connected;
-            forge::beginCard("##setup", "Aufnahme", IC_SETTINGS_2);
+            forge::beginCard("##setup", tr("Aufnahme"), IC_SETTINGS_2);
             ImGui::BeginDisabled(!canSetUp);
-            int moves = turntableUi ? 0 : 1; const char* const movesN[] = {"Drehteller", "Handbetrieb"};
+            int moves = turntableUi ? 0 : 1; const char* const movesN[] = {tr("Drehteller"), tr("Handbetrieb")};
             if (forge::segmented("moves", moves, movesN, 2)) { turntableUi = moves == 0; cmd.turntable = turntableUi; cmd.resetModel = true; }
-            const char* sizes[] = {"Klein (11 bis 30 cm)", "Mittel (12 bis 40 cm)", "Groß (18 bis 120 cm)"};
-            if (forge::combo("Objektgröße", &sizeChoice, sizes, 3)) { cmd.size = sizeChoice; cmd.resetModel = true; }
-            const char* res[] = {"Sehr fein (0,15 mm)", "Fein (0,25 mm)", "Normal (0,5 mm)", "Grob (1 mm)"};
-            if (forge::combo("Auflösung", &voxelChoice, res, 4)) {
+            const char* sizes[] = {tr("Klein (11 bis 30 cm)"), tr("Mittel (12 bis 40 cm)"), tr("Groß (18 bis 120 cm)")};
+            if (forge::combo(tr("Objektgröße"), &sizeChoice, sizes, 3)) { cmd.size = sizeChoice; cmd.resetModel = true; }
+            const char* res[] = {tr("Sehr fein (0,15 mm)"), tr("Fein (0,25 mm)"), tr("Normal (0,5 mm)"), tr("Grob (1 mm)")};
+            if (forge::combo(tr("Auflösung"), &voxelChoice, res, 4)) {
                 const float vox[] = {0.15f, 0.25f, 0.5f, 1.f}; cmd.voxel = vox[voxelChoice];
                 if (st.integratedFrames == 0) cmd.resetModel = true;   // an existing scan is only rebuilt on request
             }
-            ImGui::TextColored(forge::textDim, "Scanner-Haltung");
-            if (ImGui::IsItemHovered()) ImGui::SetTooltip("Wie der Scanner gehalten wird. Hochkant: Bild und Oben des Modells drehen mit.\nRechts oder links: wohin die Oberseite des Scanners von hinten gesehen zeigt.");
-            const char* const rolls[] = {"Quer", "Hochkant rechts", "Hochkant links"};
+            ImGui::TextColored(forge::textDim, tr("Scanner-Haltung"));
+            if (ImGui::IsItemHovered()) ImGui::SetTooltip(tr("Wie der Scanner gehalten wird. Hochkant: Bild und Oben des Modells drehen mit.\nRechts oder links: wohin die Oberseite des Scanners von hinten gesehen zeigt."));
+            const char* const rolls[] = {tr("Quer"), tr("Hochkant rechts"), tr("Hochkant links")};
             if (forge::segmented("roll", rollUi, rolls, 3)) { cmd.roll = rollUi; settings.scanRoll = rollUi; home.save(); }
             ImGui::EndDisabled();
-            if (forge::collapsible("Erweitert")) {
-                if (turntableUi && forge::slider("Objektbereich", &regionUi, 0.5f, 2.5f, "%.1f x")) cmd.regionScale = regionUi;
-                if (forge::toggle("Unterlage entfernen", &removeBaseUi)) { cmd.removeBase = removeBaseUi; cmd.resetModel = true; }
-                if (forge::toggle("Belichtung automatisch", &autoExp)) cmd.autoExposure = autoExp;
+            if (forge::collapsible(tr("Erweitert"))) {
+                if (turntableUi && forge::slider(tr("Objektbereich"), &regionUi, 0.5f, 2.5f, "%.1f x")) cmd.regionScale = regionUi;
+                if (forge::toggle(tr("Unterlage entfernen"), &removeBaseUi)) { cmd.removeBase = removeBaseUi; cmd.resetModel = true; }
+                if (forge::toggle(tr("Belichtung automatisch"), &autoExp)) cmd.autoExposure = autoExp;
                 if (autoExp) exposureUi = exposure;
                 ImGui::BeginDisabled(autoExp);
-                if (forge::sliderInt("Belichtung", &exposureUi, 100, 14000)) cmd.manualExposure = exposureUi;
+                if (forge::sliderInt(tr("Belichtung"), &exposureUi, 100, 14000)) cmd.manualExposure = exposureUi;
                 ImGui::EndDisabled();
             }
             forge::endCard();
             if (scanning || st.integratedFrames > 0) {
-                forge::beginCard("##live", "Aktueller Scan", IC_ACTIVITY);
-                char b[64];
-                snprintf(b, sizeof b, "%d", st.integratedFrames); forge::labelValue("Bilder", b);
-                snprintf(b, sizeof b, "%d", st.lostFrames); forge::labelValue("Verloren", b, st.lostFrames > 0 ? forge::amber : forge::text);
-                snprintf(b, sizeof b, "%d im Bild, %d bekannt", st.markersMatched, st.markersInMap); forge::labelValue("Marker", b, st.markerPose ? forge::text : forge::amber);
-                if (st.state == TrackState::Good) { snprintf(b, sizeof b, "%.2f mm", st.rmsMm); forge::labelValue("Abweichung", b); }
-                snprintf(b, sizeof b, "%.0f MB", st.memoryBytes/1e6); forge::labelValue("Speicher", b);
+                forge::beginCard("##live", tr("Aktueller Scan"), IC_ACTIVITY);
+                char b[160];
+                snprintf(b, sizeof b, "%d", st.integratedFrames); forge::labelValue(tr("Bilder"), b);
+                snprintf(b, sizeof b, "%d", st.lostFrames); forge::labelValue(tr("Verloren"), b, st.lostFrames > 0 ? forge::amber : forge::text);
+                snprintf(b, sizeof b, tr("%d im Bild, %d bekannt"), st.markersMatched, st.markersInMap); forge::labelValue(tr("Marker"), b, st.markerPose ? forge::text : forge::amber);
+                if (st.state == TrackState::Good) { snprintf(b, sizeof b, "%.2f mm", st.rmsMm); forge::labelValue(tr("Abweichung"), b); }
+                snprintf(b, sizeof b, "%.0f MB", st.memoryBytes/1e6); forge::labelValue(tr("Speicher"), b);
                 if (forge::button(IC_TRASH_2 "  Verwerfen und neu beginnen", {-FLT_MIN, 0})) { scanning = false; cmd.scanning = false; cmd.resetModel = true; }
                 forge::endCard();
             }
             project.panel(!scanning && !meshBusy && !edit.busy(), scanning ? 0 : st.integratedFrames, !scanning && !meshBusy && !edit.busy(), st.integratedFrames > 0);
-            forge::beginCard("##mesh", "Netz", IC_BOX);
+            forge::beginCard("##mesh", tr("Netz"), IC_BOX);
             auto makeMesh = [&](bool rebuild) {
                 if (meshThread.joinable()) meshThread.join();
                 meshBusy = true; const float v = cmd.voxel; MeshOptions mo = meshOpt; mo.minWeight = 1+(noiseUi*7+50)/100; scanMeshVoxel = v;
@@ -464,20 +465,20 @@ int main() {
             const bool inProject = project.hasScans(), idle = !scanning && !meshBusy && !edit.busy() && !project.busy();
             ImGui::BeginDisabled(!idle || (st.integratedFrames == 0 && !inProject));
             const float big = forge::px(40);
-            if (forge::primaryButton(meshBusy ? "Berechne ...##m" : "Netz erstellen", {-FLT_MIN, big})) {
+            if (forge::primaryButton(meshBusy ? "Berechne ...##m" : tr("Netz erstellen"), {-FLT_MIN, big})) {
                 if (inProject) { if (st.integratedFrames > 0) project.commitLive(); project.openFusion(); }   // several scans: choose in the dialog
                 else makeMesh(false);
             }
             if (forge::button(IC_SPARKLES "  Ein-Klick-Prozess", {-FLT_MIN, 0})) edit.openOneClick();
             forge::noteItem("Ein-Klick-Prozess");
-            if (!inProject) { const char* resLabel[] = {"0,15 mm", "0,25 mm", "0,5 mm", "1 mm"}; char rebuildLabel[64]; snprintf(rebuildLabel, sizeof rebuildLabel, IC_ROTATE_CW "  Neu berechnen mit %s", resLabel[voxelChoice]); if (forge::button(rebuildLabel, {-FLT_MIN, 0})) makeMesh(true); }
+            if (!inProject) { const char* resLabel[] = {tr("0,15 mm"), tr("0,25 mm"), tr("0,5 mm"), "1 mm"}; char rebuildLabel[160]; snprintf(rebuildLabel, sizeof rebuildLabel, tr(IC_ROTATE_CW "  Neu berechnen mit %s"), resLabel[voxelChoice]); if (forge::button(rebuildLabel, {-FLT_MIN, 0})) makeMesh(true); }
             ImGui::EndDisabled();
-            if (forge::collapsible("Netz-Einstellungen")) {
-                forge::toggle("Kleine Reste entfernen", &meshOpt.removeFragments);
-                forge::toggle("Bereinigen, beste Farbe", &meshOpt.cleanUp);
-                if (ImGui::IsItemHovered()) ImGui::SetTooltip("Entfernt, wodurch eine Kamera hindurchgesehen hat, richtet die Bilder fein aus\nund nimmt die Farbe aus den besten Ansichten.");
-                forge::sliderInt("Rauschunterdrückung", &noiseUi, 0, 100, "%d %%");
-                forge::sliderInt("Vorglättung", &meshOpt.smoothIterations, 0, 20);
+            if (forge::collapsible(tr("Netz-Einstellungen"))) {
+                forge::toggle(tr("Kleine Reste entfernen"), &meshOpt.removeFragments);
+                forge::toggle(tr("Bereinigen, beste Farbe"), &meshOpt.cleanUp);
+                if (ImGui::IsItemHovered()) ImGui::SetTooltip(tr("Entfernt, wodurch eine Kamera hindurchgesehen hat, richtet die Bilder fein aus\nund nimmt die Farbe aus den besten Ansichten."));
+                forge::sliderInt(tr("Rauschunterdrückung"), &noiseUi, 0, 100, "%d %%");
+                forge::sliderInt(tr("Vorglättung"), &meshOpt.smoothIterations, 0, 20);
             }
             forge::endCard();
         }
@@ -501,34 +502,34 @@ int main() {
                 addScanImage(dl, texPrev.id, a, {a.x+pw, a.y+ph}, rollUi);
             } else {
                 ImGui::PushFont(forge::fontIcon); const char* ic = connected ? IC_SCAN_LINE : IC_CAMERA; const ImVec2 is = ImGui::CalcTextSize(ic); dl->AddText(forge::fontIcon, forge::px(44), {o.x+(r.x-is.x*2.3f)/2, o.y+r.y/2-forge::px(66)}, forge::col(forge::textFaint), ic); ImGui::PopFont();
-                ImGui::PushFont(forge::fontTitle); const char* t1 = connected ? "Bereit zum Scannen" : "Scanner anschließen"; const ImVec2 ts = ImGui::CalcTextSize(t1); dl->AddText({o.x+(r.x-ts.x)/2, o.y+r.y/2}, forge::col(forge::text), t1); ImGui::PopFont();
-                const char* t2 = connected ? "Objekt mittig auf den Teller stellen und Scan starten." : "Der CR-Scan Otter wird automatisch erkannt."; const ImVec2 t2s = ImGui::CalcTextSize(t2); dl->AddText({o.x+(r.x-t2s.x)/2, o.y+r.y/2+forge::px(26)}, forge::col(forge::textDim), t2);
+                ImGui::PushFont(forge::fontTitle); const char* t1 = connected ? tr("Bereit zum Scannen") : tr("Scanner anschließen"); const ImVec2 ts = ImGui::CalcTextSize(t1); dl->AddText({o.x+(r.x-ts.x)/2, o.y+r.y/2}, forge::col(forge::text), t1); ImGui::PopFont();
+                const char* t2 = connected ? tr("Objekt mittig auf den Teller stellen und Scan starten.") : tr("Der CR-Scan Otter wird automatisch erkannt."); const ImVec2 t2s = ImGui::CalcTextSize(t2); dl->AddText({o.x+(r.x-t2s.x)/2, o.y+r.y/2+forge::px(26)}, forge::col(forge::textDim), t2);
             }
             // Live images, floating top right.
             if (connected) {
                 const float m = forge::px(12);
                 float w = std::min(forge::px(250), r.x*.24f), h = w*.625f;
                 if (rollUi) { h = std::min(forge::px(250), (r.y-forge::px(110))/2-m); w = h*.625f; }   // upright pictures: narrower, and both must still fit
-                pictureInPicture(dl, texIr.id, {e.x-w-m, o.y+m}, {w, h}, "Infrarot", rollUi, &markerSpots);
-                pictureInPicture(dl, texDepth.id, {e.x-w-m, o.y+m*2+h}, {w, h}, "Tiefe", rollUi, nullptr);
+                pictureInPicture(dl, texIr.id, {e.x-w-m, o.y+m}, {w, h}, tr("Infrarot"), rollUi, &markerSpots);
+                pictureInPicture(dl, texDepth.id, {e.x-w-m, o.y+m*2+h}, {w, h}, tr("Tiefe"), rollUi, nullptr);
             }
             // State, top left.
             ImVec2 hud{o.x+forge::px(12), o.y+forge::px(12)}; const float line = forge::px(34);
             if (connected) {
-                char b[64];
+                char b[160];
                 if (scanning) {
-                    if (st.state == TrackState::Lost) forge::chipAt(dl, hud, "Position verloren: zu einer bekannten Stelle zurück", forge::danger, IC_CIRCLE_ALERT);
-                    else if (st.poseUnconfirmed) forge::chipAt(dl, hud, "Position wird geprüft ...", forge::amber, IC_CROSSHAIR);
-                    else if (st.state == TrackState::Waiting) forge::chipAt(dl, hud, "Warte auf Oberfläche im Bild", forge::amber, IC_FOCUS);
-                    else forge::chipAt(dl, hud, "Tracking gut", forge::green, IC_CIRCLE_CHECK);
+                    if (st.state == TrackState::Lost) forge::chipAt(dl, hud, tr("Position verloren: zu einer bekannten Stelle zurück"), forge::danger, IC_CIRCLE_ALERT);
+                    else if (st.poseUnconfirmed) forge::chipAt(dl, hud, tr("Position wird geprüft ..."), forge::amber, IC_CROSSHAIR);
+                    else if (st.state == TrackState::Waiting) forge::chipAt(dl, hud, tr("Warte auf Oberfläche im Bild"), forge::amber, IC_FOCUS);
+                    else forge::chipAt(dl, hud, tr("Tracking gut"), forge::green, IC_CIRCLE_CHECK);
                     hud.y += line;
                 }
-                snprintf(b, sizeof b, "%d Marker im Bild", st.markersDetected);
+                snprintf(b, sizeof b, tr("%d Marker im Bild"), st.markersDetected);
                 const bool fewMarkers = st.markersDetected < 5;
                 forge::chipAt(dl, hud, b, fewMarkers ? forge::amber : forge::textDim, IC_TARGET); hud.y += line;
-                if (st.baseFound) { forge::chipAt(dl, hud, "Unterlage erkannt", forge::textDim, IC_LAYERS); hud.y += line; }
-                if (scanning && st.turnDegPerFrame > 6.f) { forge::chipAt(dl, hud, "Langsamer drehen", forge::amber, IC_TRIANGLE_ALERT); hud.y += line; }
-                if (fewMarkers && turntableUi && st.medianDepth > 0) { forge::chipAt(dl, hud, "Teller ganz ins Bild rücken, mindestens 5 Marker", forge::amber, IC_INFO); hud.y += line; }
+                if (st.baseFound) { forge::chipAt(dl, hud, tr("Unterlage erkannt"), forge::textDim, IC_LAYERS); hud.y += line; }
+                if (scanning && st.turnDegPerFrame > 6.f) { forge::chipAt(dl, hud, tr("Langsamer drehen"), forge::amber, IC_TRIANGLE_ALERT); hud.y += line; }
+                if (fewMarkers && turntableUi && st.medianDepth > 0) { forge::chipAt(dl, hud, tr("Teller ganz ins Bild rücken, mindestens 5 Marker"), forge::amber, IC_INFO); hud.y += line; }
             }
             // Main action and distance, floating at the bottom.
             const float barW = std::min(forge::px(460), r.x-forge::px(40)), barH = forge::px(60); const ImVec2 bp{o.x+(r.x-barW)/2, e.y-barH-forge::px(16)};
@@ -537,23 +538,23 @@ int main() {
                 const float btnW = forge::px(170), btnH = barH-forge::px(14);
                 ImGui::SetCursorPos({forge::px(7), forge::px(7)});
                 ImGui::BeginDisabled(!connected);
-                if (!scanning) { if (forge::primaryButton(st.integratedFrames > 0 ? IC_PLAY "  Scan fortsetzen##s" : IC_PLAY "  Scan starten##s", {btnW, btnH})) { scanning = true; cmd.scanning = true; } forge::noteItem(st.integratedFrames > 0 ? "Scan fortsetzen" : "Scan starten"); forge::noteItem("Scan starten"); }
+                if (!scanning) { if (forge::primaryButton(st.integratedFrames > 0 ? IC_PLAY "  Scan fortsetzen##s" : IC_PLAY "  Scan starten##s", {btnW, btnH})) { scanning = true; cmd.scanning = true; } forge::noteItem(st.integratedFrames > 0 ? tr("Scan fortsetzen") : tr("Scan starten")); forge::noteItem("Scan starten"); }
                 else { if (forge::dangerButton(IC_SQUARE "  Scan anhalten##s", {btnW, btnH})) { scanning = false; cmd.scanning = false; } forge::noteItem("Scan anhalten"); }
                 ImGui::EndDisabled();
                 // Distance: where the object is within the working range.
                 const ScanProfile prof = profileFor((ScanSize)sizeChoice); ImDrawList* bl = ImGui::GetWindowDrawList(); const ImVec2 wp = ImGui::GetWindowPos();
-                const float gx0 = wp.x+btnW+forge::px(22), gx1 = wp.x+barW-forge::px(18), gy = wp.y+barH*.66f; char b[72];
+                const float gx0 = wp.x+btnW+forge::px(22), gx1 = wp.x+barW-forge::px(18), gy = wp.y+barH*.66f; char b[160];
                 const float zLo = prof.zMin*.7f, zHi = prof.zMax*1.2f; auto toX = [&](float z) { return gx0+(gx1-gx0)*std::clamp((z-zLo)/(zHi-zLo), 0.f, 1.f); };
                 bl->AddRectFilled({gx0, gy-forge::px(2)}, {gx1, gy+forge::px(2)}, forge::col(forge::hover), forge::px(2));
                 bl->AddRectFilled({toX(prof.zMin), gy-forge::px(2)}, {toX(prof.zMax), gy+forge::px(2)}, forge::col(forge::green, .22f), forge::px(2));
                 bl->AddRectFilled({toX(prof.bestMin), gy-forge::px(3)}, {toX(prof.bestMax), gy+forge::px(3)}, forge::col(forge::green, .9f), forge::px(3));
                 const bool ok = st.medianDepth >= prof.zMin && st.medianDepth <= prof.zMax;
-                if (st.medianDepth > 0) { bl->AddCircleFilled({toX(st.medianDepth), gy}, forge::px(6), forge::col(ok ? forge::text : forge::amber)); snprintf(b, sizeof b, "Abstand %.0f mm%s", st.medianDepth, !ok ? (st.medianDepth < prof.zMin ? "  (zu nah)" : "  (zu weit)") : st.medianDepth > prof.bestMax ? "  ·  näher ran für mehr Detail" : st.medianDepth >= prof.bestMin ? "  ·  beste Schärfe" : ""); }
-                else snprintf(b, sizeof b, "Abstand: keine Oberfläche");
+                if (st.medianDepth > 0) { bl->AddCircleFilled({toX(st.medianDepth), gy}, forge::px(6), forge::col(ok ? forge::text : forge::amber)); snprintf(b, sizeof b, tr("Abstand %.0f mm%s"), st.medianDepth, !ok ? (st.medianDepth < prof.zMin ? tr("  (zu nah)") : tr("  (zu weit)")) : st.medianDepth > prof.bestMax ? tr("  ·  näher ran für mehr Detail") : st.medianDepth >= prof.bestMin ? tr("  ·  beste Schärfe") : ""); }
+                else snprintf(b, sizeof b, tr("Abstand: keine Oberfläche"));
                 bl->AddText({gx0, wp.y+forge::px(11)}, forge::col(st.medianDepth > 0 && !ok ? forge::amber : forge::textDim), b);
             }
             forge::endFloating();
-            if (meshBusy) forge::busyOverlay(o, r, "Netz wird berechnet", -1);
+            if (meshBusy) forge::busyOverlay(o, r, tr("Netz wird berechnet"), -1);
             else if (project.busy()) forge::busyOverlay(o, r, project.busyLabel().c_str(), project.busyProgress());
             else if (edit.busy() && !edit.analysing()) forge::busyOverlay(o, r, edit.busyLabel().c_str(), edit.busyProgress());
         }

@@ -1,5 +1,6 @@
 #include <algorithm>
 #include "device.hpp"
+#include "i18n.hpp"
 #include <fcntl.h>
 #include <linux/usb/video.h>
 #include <linux/uvcvideo.h>
@@ -88,18 +89,18 @@ bool OtterDevice::readRaw(uint32_t id, std::vector<uint8_t>& out) {
 bool OtterDevice::ensureBinocularMode(std::string& error) {
     const char* kWantedMode = pair_ == CameraPair::Far ? "Long_range_mode Binocular" : "Close_range_mode Binocular";
     std::vector<uint8_t> cur, list;
-    if (!readStruct(STRUCT_DEPTH_MODE, cur) || cur.size() < kModeSize) { error = "Tiefenmodus nicht lesbar"; return false; }
+    if (!readStruct(STRUCT_DEPTH_MODE, cur) || cur.size() < kModeSize) { error = tr("Tiefenmodus nicht lesbar"); return false; }
     if (modeName(cur.data()) == kWantedMode) return true;
-    if (!readRaw(RAW_DEPTH_MODES, list)) { error = "Modusliste nicht lesbar"; return false; }
+    if (!readRaw(RAW_DEPTH_MODES, list)) { error = tr("Modusliste nicht lesbar"); return false; }
     for (size_t i = 0; i + kModeSize <= list.size(); i += kModeSize) {
         if (modeName(list.data() + i) != kWantedMode) continue;
         std::vector<uint8_t> p, r; appendU32(p, STRUCT_DEPTH_MODE);
         p.insert(p.end(), list.begin() + i, list.begin() + i + kModeSize);
-        if (!xferXu(OP_SET_STRUCT, p, r, 1)) { error = "Modus konnte nicht gesetzt werden"; return false; }
+        if (!xferXu(OP_SET_STRUCT, p, r, 1)) { error = tr("Modus konnte nicht gesetzt werden"); return false; }
         usleep(300000);
         return true;
     }
-    error = "Geraet kennt den Binocular-Modus nicht";
+    error = tr("Gerät kennt den Binocular-Modus nicht");
     return false;
 }
 
@@ -118,23 +119,23 @@ bool OtterDevice::open(std::string& error) {
         if (itf == "02") nodeIr = "/dev/" + e.path().filename().string();
         if (itf == "04") nodeColor = "/dev/" + e.path().filename().string();
     }
-    if (nodeDepth.empty() || nodeIr.empty()) { error = "Kein CR-Scan Otter gefunden. Ist der Scanner per USB 3 angeschlossen?"; return false; }
+    if (nodeDepth.empty() || nodeIr.empty()) { error = tr("Kein CR-Scan Otter gefunden. Ist der Scanner per USB 3 angeschlossen?"); return false; }
     fdDepth_ = ::open(nodeDepth.c_str(), O_RDWR | O_NONBLOCK);
     fdIr_ = ::open(nodeIr.c_str(), O_RDWR | O_NONBLOCK);
     if (!nodeColor.empty()) fdColor_ = ::open(nodeColor.c_str(), O_RDWR | O_NONBLOCK);
     if (fdDepth_ < 0 || fdIr_ < 0) {
-        error = std::string("Kamerazugriff verweigert (") + strerror(errno) + "). Gehoert dein Benutzer zur Gruppe 'video'?";
+        error = trf("Kamerazugriff verweigert (%s). Gehört dein Benutzer zur Gruppe 'video'?", strerror(errno));
         close(); return false;
     }
     for (int sel = 1; sel <= 3; sel++) {
         uint8_t len[2] = {0, 0};
         uvc_xu_control_query q{};
         q.unit = kXuUnit; q.selector = (uint8_t)sel; q.query = UVC_GET_LEN; q.size = 2; q.data = len;
-        if (ioctl(fdDepth_, UVCIOC_CTRL_QUERY, &q) < 0) { error = "Geraetesteuerung antwortet nicht. Bitte Scanner neu einstecken."; close(); return false; }
+        if (ioctl(fdDepth_, UVCIOC_CTRL_QUERY, &q) < 0) { error = tr("Gerätesteuerung antwortet nicht. Bitte Scanner neu einstecken."); close(); return false; }
         xuLen_[sel] = len[0] | (len[1] << 8);
     }
     std::vector<uint8_t> ver;
-    if (!readStruct(STRUCT_VERSION, ver) || ver.size() < 164) { error = "Geraeteinformationen nicht lesbar"; close(); return false; }
+    if (!readStruct(STRUCT_VERSION, ver) || ver.size() < 164) { error = tr("Geräteinformationen nicht lesbar"); close(); return false; }
     std::string fw((const char*)ver.data(), strnlen((const char*)ver.data(), 16));
     std::string serial((const char*)ver.data() + 80, strnlen((const char*)ver.data() + 80, 16));
     description_ = "CR-Scan Otter, Firmware " + fw + ", S/N " + serial;
@@ -145,14 +146,14 @@ bool OtterDevice::open(std::string& error) {
 // The calibration belongs to the active camera pair, so read it again after every mode change.
 bool OtterDevice::readCalibration(std::string& error) {
     std::vector<uint8_t> cal;
-    if (!readRaw(RAW_DEPTH_CALIB, cal) || cal.size() < 28) { error = "Kalibrierung nicht lesbar"; return false; }
+    if (!readRaw(RAW_DEPTH_CALIB, cal) || cal.size() < 28) { error = tr("Kalibrierung nicht lesbar"); return false; }
     float f[7]; memcpy(f, cal.data(), 28);
     calib_.baselineMm = f[1]; calib_.focalPx = f[3]; calib_.dispOffset = f[5];
     calib_.rowOffset = pair_ == CameraPair::Far ? 1 : 0;   // measured on a flat wall: constant over the whole image
-    if (!(calib_.focalPx > 100 && calib_.baselineMm > 1 && calib_.dispOffset >= 0)) { error = "Kalibrierung unplausibel"; return false; }
+    if (!(calib_.focalPx > 100 && calib_.baselineMm > 1 && calib_.dispOffset >= 0)) { error = tr("Kalibrierung unplausibel"); return false; }
     // All geometry assumes mirrored IR images. Refuse to produce silently reversed models otherwise.
     int32_t mirror[5];
-    if (!getProperty(PROP_IR_MIRROR, mirror) || mirror[0] != 1) { error = "Unerwartete Spiegelung der IR-Bilder, bitte Scanner neu einstecken"; return false; }
+    if (!getProperty(PROP_IR_MIRROR, mirror) || mirror[0] != 1) { error = tr("Unerwartete Spiegelung der IR-Bilder, bitte Scanner neu einstecken"); return false; }
     return true;
 }
 
@@ -173,22 +174,22 @@ int OtterDevice::irExposure() { int32_t v[5]; return getProperty(PROP_IR_EXPOSUR
 bool OtterDevice::setupStream(Stream& s, unsigned pixelFormat, std::string& error) {
     v4l2_format f{}; f.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
     f.fmt.pix.width = 1280; f.fmt.pix.height = 800; f.fmt.pix.pixelformat = pixelFormat;
-    if (ioctl(s.fd, VIDIOC_S_FMT, &f) < 0 || f.fmt.pix.width != 1280 || f.fmt.pix.height != 800 || f.fmt.pix.pixelformat != pixelFormat) { error = "Videoformat abgelehnt"; return false; }
+    if (ioctl(s.fd, VIDIOC_S_FMT, &f) < 0 || f.fmt.pix.width != 1280 || f.fmt.pix.height != 800 || f.fmt.pix.pixelformat != pixelFormat) { error = tr("Videoformat abgelehnt"); return false; }
     v4l2_streamparm parm{}; parm.type = f.type; parm.parm.capture.timeperframe = {1, 30};
     ioctl(s.fd, VIDIOC_S_PARM, &parm);
     v4l2_requestbuffers r{}; r.count = 6; r.type = f.type; r.memory = V4L2_MEMORY_MMAP;
-    if (ioctl(s.fd, VIDIOC_REQBUFS, &r) < 0 || r.count < 2) { error = "Puffer nicht verfuegbar (Kamera von anderem Programm belegt?)"; return false; }
+    if (ioctl(s.fd, VIDIOC_REQBUFS, &r) < 0 || r.count < 2) { error = tr("Puffer nicht verfügbar (Kamera von anderem Programm belegt?)"); return false; }
     s.buffers.clear();
     for (unsigned i = 0; i < r.count; i++) {
         v4l2_buffer b{}; b.type = f.type; b.memory = V4L2_MEMORY_MMAP; b.index = i;
-        if (ioctl(s.fd, VIDIOC_QUERYBUF, &b) < 0) { error = "Puffer-Abfrage fehlgeschlagen"; return false; }
+        if (ioctl(s.fd, VIDIOC_QUERYBUF, &b) < 0) { error = tr("Puffer-Abfrage fehlgeschlagen"); return false; }
         void* p = mmap(nullptr, b.length, PROT_READ | PROT_WRITE, MAP_SHARED, s.fd, b.m.offset);
-        if (p == MAP_FAILED) { error = "Puffer-Mapping fehlgeschlagen"; return false; }
+        if (p == MAP_FAILED) { error = tr("Puffer-Mapping fehlgeschlagen"); return false; }
         s.buffers.push_back({(uint8_t*)p, b.length});
-        if (ioctl(s.fd, VIDIOC_QBUF, &b) < 0) { error = "Puffer-Einreihung fehlgeschlagen"; return false; }
+        if (ioctl(s.fd, VIDIOC_QBUF, &b) < 0) { error = tr("Puffer-Einreihung fehlgeschlagen"); return false; }
     }
     int t = f.type;
-    if (ioctl(s.fd, VIDIOC_STREAMON, &t) < 0) { error = std::string("Stream-Start fehlgeschlagen: ") + strerror(errno); return false; }
+    if (ioctl(s.fd, VIDIOC_STREAMON, &t) < 0) { error = std::string(tr("Stream-Start fehlgeschlagen: ")) + strerror(errno); return false; }
     s.pending = -1;
     return true;
 }
@@ -208,7 +209,7 @@ bool OtterDevice::startStreams(std::string& error) {
         v4l2_format f{}; f.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
         f.fmt.pix.width = 1280; f.fmt.pix.height = 800; f.fmt.pix.pixelformat = V4L2_PIX_FMT_GREY;
         if (ioctl(fd, VIDIOC_S_FMT, &f) < 0) {
-            error = errno == EBUSY ? "Kamera ist belegt. Laeuft VoxelForge oder ein anderes Kameraprogramm bereits?" : "Videoformat abgelehnt";
+            error = errno == EBUSY ? tr("Kamera ist belegt. Läuft VoxelForge oder ein anderes Kameraprogramm bereits?") : tr("Videoformat abgelehnt");
             return false;
         }
     }
@@ -217,10 +218,10 @@ bool OtterDevice::startStreams(std::string& error) {
     depthStream_.fd = fdDepth_; irStream_.fd = fdIr_;
     if (!setupStream(depthStream_, V4L2_PIX_FMT_GREY, error) || !setupStream(irStream_, V4L2_PIX_FMT_GREY, error)) {
         teardownStream(depthStream_); teardownStream(irStream_);
-        if (errno == EBUSY) error = "Kamera ist belegt. Laeuft VoxelForge oder ein anderes Kameraprogramm bereits?";
+        if (errno == EBUSY) error = tr("Kamera ist belegt. Läuft VoxelForge oder ein anderes Kameraprogramm bereits?");
         return false;
     }
-    if (!setProperty(PROP_IR_SOURCE, 0)) { teardownStream(depthStream_); teardownStream(irStream_); error = "IR-Quelle nicht setzbar"; return false; }
+    if (!setProperty(PROP_IR_SOURCE, 0)) { teardownStream(depthStream_); teardownStream(irStream_); error = tr("IR-Quelle nicht setzbar"); return false; }
     setLaser(true);
     colorRunning_ = false; latestColor_.clear();
     if (colorEnabled_ && fdColor_ >= 0) {

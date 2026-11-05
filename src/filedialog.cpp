@@ -1,4 +1,5 @@
 #include "filedialog.hpp"
+#include "i18n.hpp"
 #include <sys/wait.h>
 #include <imgui.h>
 #include <algorithm>
@@ -35,7 +36,7 @@ std::string commandFor(Kind kind, const std::string& title, const std::string& s
     if (haveK && (kde || !haveZ)) {
         std::string c = std::string(sandboxed() ? "flatpak-spawn --host " : "")+"kdialog --title "+quote(title)+(kind == Kind::Open ? " --getopenfilename " : kind == Kind::Save ? " --getsavefilename " : " --getexistingdirectory ")+quote(start);
         if (kind != Kind::Folder && !filters.empty()) {
-            std::string f; for (const Filter& fl : filters) { if (!f.empty()) f += "\n"; std::string pat; for (const std::string& e : fl.extensions) pat += (pat.empty() ? "*." : " *.")+e; f += pat+"|"+fl.name; }
+            std::string f; for (const Filter& fl : filters) { if (!f.empty()) f += "\n"; std::string pat; for (const std::string& e : fl.extensions) pat += (pat.empty() ? "*." : " *.")+e; f += pat+"|"+tr(fl.name.c_str()); }
             c += " "+quote(f);
         }
         return c+" 2>/dev/null";
@@ -44,7 +45,7 @@ std::string commandFor(Kind kind, const std::string& title, const std::string& s
         std::string c = std::string(sandboxed() ? "flatpak-spawn --host " : "")+"zenity --file-selection --title="+quote(title)+" --filename="+quote(start);
         if (kind == Kind::Save) c += " --save --confirm-overwrite";
         if (kind == Kind::Folder) c += " --directory";
-        for (const Filter& fl : filters) { std::string pat; for (const std::string& e : fl.extensions) pat += " *."+e; c += " "+quote("--file-filter="+fl.name+" |"+pat); }
+        for (const Filter& fl : filters) { std::string pat; for (const std::string& e : fl.extensions) pat += " *."+e; c += " "+quote(std::string("--file-filter=")+tr(fl.name.c_str())+" |"+pat); }
         return c+" 2>/dev/null";
     }
     return "";
@@ -87,7 +88,7 @@ void builtinDialog() {
         if (ImGui::Selectable(label.c_str(), n == gName)) { if (dir) { gDir = e.path().string(); gName[0] = 0; listDir(); break; } snprintf(gName, sizeof gName, "%s", n.c_str()); }
     }
     ImGui::EndChild();
-    if (gKind != Kind::Folder) { ImGui::SetNextItemWidth(-1); ImGui::InputTextWithHint("##name", "Dateiname", gName, sizeof gName); }
+    if (gKind != Kind::Folder) { ImGui::SetNextItemWidth(-1); ImGui::InputTextWithHint("##name", tr("Dateiname"), gName, sizeof gName); }
     const float w = (ImGui::GetContentRegionAvail().x-ImGui::GetStyle().ItemSpacing.x)/2;
     if (forge::button("Abbrechen##fd", {w, forge::px(36)})) { ImGui::CloseCurrentPopup(); gBuiltin = gBuiltinOpen = false; deliver(""); ImGui::EndPopup(); return; }
     ImGui::SameLine(); ImGui::BeginDisabled(gKind != Kind::Folder && !*gName);
@@ -122,14 +123,14 @@ void frame() {
     bool finished, failed; std::string answer;
     { std::lock_guard<std::mutex> g(gPending->m); finished = gPending->finished; failed = gPending->failed; answer = gPending->answer; }
     if (finished) {
-        if (failed) { gPending.reset(); forge::toast("Der Dateidialog des Systems ließ sich nicht öffnen.", forge::Toast::Error); gDone = nullptr; return; }
+        if (failed) { gPending.reset(); forge::toast(tr("Der Dateidialog des Systems ließ sich nicht öffnen."), forge::Toast::Error); gDone = nullptr; return; }
         deliver(answer); return;
     }
     // The dialog is another window: keep this one from being used meanwhile.
     ImGuiViewport* vp = ImGui::GetMainViewport(); ImGui::SetNextWindowPos(vp->Pos); ImGui::SetNextWindowSize(vp->Size); ImGui::SetNextWindowFocus();
     ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0, 0, 0, .45f));
     ImGui::Begin("##filewait", nullptr, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings);
-    const char* t = "Dateidialog ist geöffnet"; const ImVec2 ts = ImGui::CalcTextSize(t); ImGui::SetCursorPos({(vp->Size.x-ts.x)/2, (vp->Size.y-ts.y)/2}); ImGui::TextUnformatted(t);
+    const char* t = tr("Dateidialog ist geöffnet"); const ImVec2 ts = ImGui::CalcTextSize(t); ImGui::SetCursorPos({(vp->Size.x-ts.x)/2, (vp->Size.y-ts.y)/2}); ImGui::TextUnformatted(t);
     ImGui::End(); ImGui::PopStyleColor();
 }
 }

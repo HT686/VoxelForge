@@ -1,0 +1,14 @@
+build/
+*.exe
+research/recordings/
+research/measure/
+research/device-dumps/
+*.stl
+*.pair
+*.jpg
+otter_product-details.jpg
+!assets/*.jpg
+__pycache__/
+*.vfproj
+dist/
+.flatpak-builder/

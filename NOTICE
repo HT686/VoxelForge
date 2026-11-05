@@ -1,0 +1,10 @@
+VoxelForge
+Copyright 2026 The VoxelForge authors
+
+The device protocol constants are based on OrbbecSDK v2 (MIT License, Copyright Orbbec Inc.).
+The user interface uses Dear ImGui (MIT License), fetched at build time.
+The released packages contain GLFW (zlib License), libjpeg-turbo (BSD-style licenses), libpng (libpng License)
+and the Inter (SIL OFL 1.1) and Lucide (ISC) fonts.
+
+"Creality" and "CR-Scan" are trademarks of their owners. VoxelForge is an independent project and is not
+affiliated with or endorsed by Creality or Orbbec.

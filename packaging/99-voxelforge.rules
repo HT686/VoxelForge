@@ -1,0 +1,2 @@
+# Lets programs of the logged-in user talk to the Creality CR-Scan Otter.
+SUBSYSTEM=="usb", ATTR{idVendor}=="2bc5", ATTR{idProduct}=="06da", MODE="0666"

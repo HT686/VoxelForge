@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=VoxelForge
+Comment=Open Source 3D Scanning for Linux
+Exec=voxelforge
+Icon=voxelforge
+Terminal=false
+Categories=Graphics;3DGraphics;
+StartupWMClass=voxelforge

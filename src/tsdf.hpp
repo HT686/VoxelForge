@@ -17,6 +17,7 @@ struct Block { Voxel v[kBlockSide*kBlockSide*kBlockSide]; int x, y, z; };
 struct RayImage {
     int width = 0, height = 0;
     std::vector<V3> vertex, normal;  // world coordinates; normal.z==0 && x==0 && y==0 means no hit
+    std::vector<uint8_t> seen;       // how many frames saw the surface hit, up to 255. Filled only when asked for.
 };
 
 class Tsdf {
@@ -32,7 +33,7 @@ public:
     bool feather = true;
     void integrate(const DepthMap& d, const Pose& camToWorld, float maxWeight = 64,
                    const ColorImage* color = nullptr, const ColorCalib* colorCalib = nullptr);
-    void raycast(const Pose& camToWorld, int w, int h, float fx, float fy, float cx, float cy, float zMin, float zMax, RayImage& out) const;
+    void raycast(const Pose& camToWorld, int w, int h, float fx, float fy, float cx, float cy, float zMin, float zMax, RayImage& out, bool withSeen = false) const;
 
     Block* find(int bx, int by, int bz) const;
     const std::deque<Block>& blocks() const { return blocks_; }

@@ -46,10 +46,11 @@ This manual follows the program from the start page to the finished print. Voxel
 | **Resolution** | Very fine 0.15 mm, fine 0.25 mm, normal 0.5 mm, coarse 1 mm |
 | **Scanner orientation** | Horizontal or upright, with its top leaning right or left as seen from behind. The live pictures and the model's up direction follow. |
 
-**Advanced** holds three more settings:
+**Advanced** holds more settings:
 
 - **Object region** scales the area around the plate that counts as the object.
-- **Remove base** leaves the surface under the object out of the model.
+- **Remove base** leaves the surface under the object out of the model. With markers this happens while scanning. Without markers VoxelForge finds the plate or table afterwards, as the largest flat surface that the object stands on, and removes it when you align, fuse or build the mesh. A message says so.
+- **Quality map** colors the model while scanning, see below.
 - **Automatic exposure** sets the exposure from the dots on the object. Switch it off to set **Exposure** by hand.
 
 ### The distance bar
@@ -75,8 +76,13 @@ Messages in the view tell you what to do:
 | **Position lost** | Tracking is lost. Go back to a part already scanned. |
 | **Turn more slowly** | Turning too fast |
 | **Bring the whole plate into view** | Too few markers in view |
+| **Little shape in view** | The visible surface hardly holds the position, for example flat walls or a cylinder, and it may slip. Bring more of the object into view or use markers. |
 
 **Turn slowly**, about one turn in 15 seconds.
+
+The **quality map** colors the growing model: red where few frames have seen it so far, through yellow to green where enough have. Keep scanning until the parts you need are green.
+
+**Without markers** the position comes from the shape of the object alone. This works well for objects with clear shape, such as figures, parts with edges or the test owl. Flat, smooth or round objects give the tracking little to hold on to: use markers on the plate for them. Without markers the model comes out a little larger, about 1 % at **Normal** and 0.2 % at **Fine** or **Very fine**. For parts that have to fit, use markers or a finer resolution.
 
 ## Several scans
 
@@ -87,16 +93,19 @@ No single view sees an object from all sides. Scan it, lay it on another side, a
 - **New scan** stores the current scan in the project and returns to the live picture.
 - Click a scan in the list to see its point cloud, in the scan's colors if it has any. An opened project starts with its last scan.
 - The eye icon decides whether a scan is part of the model. The bin removes it.
+- A right click on a scan offers **Rename**, **Release alignment** (the scan is open again and can be aligned anew) and **Remove**.
 
 ### Aligning
 
 **Align** places the scans relative to each other.
 
-- **Features** with **Auto** finds the position from the shape of the surfaces. They only need to overlap in part. A proposal marked **Certain** is usually right. For symmetric objects several positions may fit, so you can step through them.
+- **Features** with **Auto** finds the position from the shape of the surfaces. They only need to overlap in part, and thin walls, flat parts and objects turned over work too. A proposal is marked **Certain** only when two independent searches agree and the shared surface holds it in every direction. Otherwise it says **Not certain, please check**: for symmetric objects several positions may fit, so you can step through them with **Next proposal**, or go straight to **Align manually**.
 - **Markers** uses the marker layout, if the object did not move on the plate between scans.
-- **Manual** lets you pick at least three matching points on both scans.
+- **Manual** shows the scan that stays on the left, the one that moves on the right, and both together below. Click the same spot on both: each pair gets its own color. One pair is often enough, as **Preview** searches the rest; three pairs far apart fix the position, and the view below follows at once. Dragging turns a view, a point can be dragged to another spot, and Ctrl+click removes its pair. The list shows how far apart each pair ends up, and marks a pair that does not fit the others. After **Confirm**, the next scan that is not aligned yet comes up.
 
-Always look at the result before accepting it.
+When the scans overlap only on flat walls, for example a thin part turned over, the position along those walls cannot be told from the shape. VoxelForge says so; set point pairs at the ends and edges then.
+
+Always look at the result before accepting it: where the scans lie right, their colors mix finely.
 
 ### Fusion
 
@@ -172,7 +181,11 @@ Settings are in `~/.config/voxelforge/settings.ini`. For the Flatpak they are in
 
 **The result looks soft.** Scan closer, in the bright green range, with **Very fine**. This is the most effective step.
 
-**Tracking gets lost.** Keep at least five markers in view and turn more slowly.
+**Tracking gets lost.** Keep at least five markers in view and turn more slowly. Without markers, keep enough of the object's shape in view.
+
+**The model is a little too large.** Scanned without markers, the model grows by about 1 % at **Normal**. Use markers or **Fine** for parts that have to fit.
+
+**Two scans are merged wrongly.** Right click the scan, **Release alignment**, and align it again, manually if needed.
 
 **No distance or surface close up.** Below about 13 cm the scanner returns little depth. Move back a little.
 

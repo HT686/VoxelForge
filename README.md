@@ -11,7 +11,8 @@
 - **Your language:** German, English, French or Spanish, following the system language, with English as the fallback
 - **Live scanning** with a turntable or by hand, held level or upright, at the scanner's full 30 frames per second
 - **Marker tracking** with a guide for the distance that gives the most detail
-- **Several scans, one model:** automatic or manual alignment, fine alignment, and removal of stray points
+- **Several scans, one model:** automatic alignment that says when it is not certain, and a manual alignment where one pair of points is often enough, then fine alignment and removal of stray points
+- **With or without markers:** without markers the base is found and removed afterwards, a quality map shows where to keep scanning, and a hint appears when too little shape is in view
 - **Mesh tools:** one-click repair, hole filling with a choice of fill types, smoothing, simplifying, cut plane, measuring, undo
 - **Export** to STL, OBJ and PLY, and one click to open a model in Bambu Studio, PrusaSlicer or OrcaSlicer
 - **Runs on the graphics card where it pays off**, and checks the card against the CPU while it does. Without a suitable card the CPU does the work

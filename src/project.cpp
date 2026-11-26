@@ -1,4 +1,7 @@
 #include "project.hpp"
+#include <random>
+#include <unordered_set>
+#include "markers.hpp"
 #include "i18n.hpp"
 #include <filesystem>
 #include <algorithm>
@@ -236,6 +239,90 @@ void buildPointCloud(ScanData& scan) {
     }
     scan.cloud = m;
 }
+Table scanTable(const ScanData& scan) {
+    if (scan.support.known) return scan.support;
+    Table t; if (scan.markers.size() < 5 || !scan.overview || scan.overview->vertices.empty() || scan.frames.empty()) return t;
+    const BasePlane b = fitBasePlane(scan.markers, scan.frames[scan.frames.size()/2].pose.t); if (!b.valid) return t;
+    // Most markers must lie on the plane, and the scanned object above it.
+    int on = 0; for (const V3& m : scan.markers) on += std::fabs(b.height(m)) < 1.f;
+    if (on < (int)scan.markers.size()*3/4) return t;
+    size_t below = 0; for (const V3& v : scan.overview->vertices) below += b.height(v) < -2.f;
+    if (below > scan.overview->vertices.size()/100) return t;
+    t.known = true; t.up = b.normal; t.height = dot(b.normal, b.center); return t;
+}
+bool removeSupport(ScanData& scan) {
+    if (scan.support.known || scan.frames.empty()) return false;
+    if (scan.markers.size() >= 5) { if (!scan.overview) buildOverview(scan); if (scanTable(scan).known) return false; }   // cut while scanning already
+    if (!scan.overview) buildOverview(scan);
+    const std::vector<V3>& v = scan.overview->vertices; if (v.size() < 500) return false;
+    // Random planes through three points, the one with the most points within 1 mm wins.
+    std::mt19937 g(4242); std::uniform_int_distribution<size_t> pick(0, v.size()-1); const size_t stride = std::max<size_t>(1, v.size()/20000);
+    size_t best = 0; V3 bn; float bh = 0;
+    for (int it = 0; it < 400; it++) {
+        const V3 a = v[pick(g)], b = v[pick(g)], c = v[pick(g)]; V3 n = cross(b-a, c-a); if (norm(n) < 1e-3f) continue; n = normalized(n);
+        const float h = dot(n, a); size_t cnt = 0; for (size_t i = 0; i < v.size(); i += stride) cnt += std::fabs(dot(n, v[i])-h) < 1.f;
+        if (cnt > best) { best = cnt; bn = n; bh = h; }
+    }
+    const size_t sampled = (v.size()+stride-1)/stride;
+    if (getenv("VF_DEBUG")) fprintf(stderr, "Unterlage %s: Ebene %zu von %zu\n", scan.name.c_str(), best, sampled);
+    if (best < sampled*15/100) return false;
+    // Every camera looks from one side, the object's: a table is seen only from above. A side face of the
+    // object is not: on a turntable the scanner circles it and sees its plane from both sides.
+    int pos = 0, neg = 0; for (size_t i = 0; i < scan.frames.size(); i += std::max<size_t>(1, scan.frames.size()/100)) { const float s = dot(bn, scan.frames[i].pose.t)-bh; pos += s > 0; neg += s < 0; }
+    if (neg > pos) { bn = bn*-1.f; bh = -bh; std::swap(pos, neg); }
+    const float camSide = (float)pos-neg;
+    if (getenv("VF_DEBUG")) fprintf(stderr, "  Kameras %d darueber, %d darunter\n", pos, neg);
+    if (neg*20 > pos+neg) return false;
+    // The object stands on it: a good part lies on the camera side. Below may lie more of the table around a
+    // turntable, but the surface must reach well beyond the object, as a plate or table does. A step inside an
+    // object or the top of a box does not.
+    const V3 ex = normalized(cross(std::fabs(bn.z) < 0.9f ? V3{0, 0, 1} : V3{1, 0, 0}, bn)), ey = cross(bn, ex);
+    std::vector<float> ax, ay, px_, py_, belowH; size_t above = 0, below = 0;
+    for (size_t i = 0; i < v.size(); i += stride) {
+        const float d = dot(bn, v[i])-bh;
+        if (d > 2.f) { above++; ax.push_back(dot(v[i], ex)); ay.push_back(dot(v[i], ey)); }
+        else if (d < -2.f) { below++; belowH.push_back(d); }
+        else if (std::fabs(d) < 1.f) { px_.push_back(dot(v[i], ex)); py_.push_back(dot(v[i], ey)); }
+    }
+    // Areas as occupied 2 mm cells of the plane: a long part lying diagonally fills only a narrow band of its box.
+    auto area = [](const std::vector<float>& x, const std::vector<float>& y) { std::unordered_set<uint64_t> cells; for (size_t i = 0; i < x.size(); i++) cells.insert(((uint64_t)(uint32_t)(int)std::floor(x[i]/2) << 32) | (uint32_t)(int)std::floor(y[i]/2)); return cells.size()*4.f; };
+    const float objectArea = area(ax, ay), planeArea = area(px_, py_);
+    if (getenv("VF_DEBUG")) fprintf(stderr, "  darueber %zu darunter %zu, Kameras %.0f, Flaeche Ebene %.0f Objekt %.0f mm2\n", above, below, camSide, planeArea, objectArea);
+    // What lies below is nothing much, or a second flat surface parallel to it: the table around a turntable.
+    bool belowIsTable = below <= (above+below)/30;
+    if (!belowIsTable && below > 50) {
+        std::nth_element(belowH.begin(), belowH.begin()+belowH.size()/2, belowH.end()); const float m = belowH[belowH.size()/2];
+        size_t flat = 0; for (float h : belowH) flat += std::fabs(h-m) < 1.5f; belowIsTable = flat*10 >= belowH.size()*7;
+    }
+    if (getenv("VF_DEBUG")) fprintf(stderr, "  darunter eben: %d\n", (int)belowIsTable);
+    if (above < sampled/20 || !(belowIsTable || planeArea >= 1.5f*objectArea)) return false;
+    // Least squares through the points on it, so that the cut follows the surface closely.
+    { V3 c{}; size_t n = 0; for (size_t i = 0; i < v.size(); i += stride) if (std::fabs(dot(bn, v[i])-bh) < 1.f) { c = c+v[i]; n++; } c = c*(1.f/n);
+      double A[3][3] = {{0}}; for (size_t i = 0; i < v.size(); i += stride) if (std::fabs(dot(bn, v[i])-bh) < 1.f) { const V3 q = v[i]-c; const double w[3] = {q.x, q.y, q.z}; for (int r = 0; r < 3; r++) for (int k = 0; k < 3; k++) A[r][k] += w[r]*w[k]; }
+      const double tr = A[0][0]+A[1][1]+A[2][2]; double x[3] = {bn.x, bn.y, bn.z};
+      for (int it = 0; it < 60; it++) { double y[3]; for (int r = 0; r < 3; r++) { y[r] = tr*x[r]; for (int k = 0; k < 3; k++) y[r] -= A[r][k]*x[k]; } const double l = std::sqrt(y[0]*y[0]+y[1]*y[1]+y[2]*y[2]); for (int r = 0; r < 3; r++) x[r] = y[r]/l; }
+      V3 nn{(float)x[0], (float)x[1], (float)x[2]}; if (dot(nn, bn) < 0) nn = nn*-1.f; bn = nn; bh = dot(bn, c); }
+    // Cut it out of every frame, as the scan does with markers: the surface and anything below it, with a little room.
+    constexpr float kClearance = 0.8f;
+    const DepthMap& gr = scan.grid; const int W = gr.width;
+    #pragma omp parallel for schedule(dynamic, 8)
+    for (size_t fi = 0; fi < scan.frames.size(); fi++) {
+        ScanFrame& f = scan.frames[fi]; size_t k = 0;
+        for (size_t i = 0; i < f.cells.size(); i++) {
+            const int x = (int)(f.cells[i]%W), y = (int)(f.cells[i]/W); const float z = f.z[i];
+            const V3 p = f.pose.apply(V3{(x-gr.cx)/gr.fx*z, (y-gr.cy)/gr.fy*z, z});
+            if (dot(bn, p)-bh < kClearance) continue;
+            f.cells[k] = f.cells[i]; f.z[k] = z; k++;
+        }
+        f.cells.resize(k); f.z.resize(k);
+    }
+    scan.support = {true, bn, bh}; scan.up = bn; scan.overview.reset(); scan.cloud.reset();
+    return true;
+}
+Table placedTable(const Table& t, const Pose& P) {
+    if (!t.known) return t;
+    Table o = t; o.up = P.rot(t.up); o.height = t.height+dot(o.up, P.t); return o;
+}
 void buildOverview(ScanData& scan) {
     if (scan.overview || scan.frames.empty()) return;
     // Coarse enough for speed, fine enough for shape: scales with the working distance.
@@ -351,6 +438,7 @@ bool makeProjectThumbnail(const std::string& projectFile, const std::string& thu
 
 namespace {
 constexpr char kMagic[8] = {'V', 'F', 'P', 'R', 'O', 'J', '0', '1'};
+constexpr char kExtra[8] = {'V', 'F', 'X', 'T', 'R', 'A', '0', '1'};
 struct Out { FILE* f; bool ok = true;
     void bytes(const void* p, size_t n) { if (n) ok = fwrite(p, 1, n, f) == n && ok; }
     template <class T> void pod(const T& v) { bytes(&v, sizeof v); }
@@ -372,6 +460,9 @@ bool saveProject(const Project& p, const std::string& path, std::string& error) 
         o.pod((uint64_t)s.frames.size());
         for (const ScanFrame& fr : s.frames) { o.vec(fr.cells); o.vec(fr.z); o.pod(fr.pose); o.vec(fr.colorJpeg); }
     }
+    // Added later, after everything older versions read, so that they still open the file: per scan its support.
+    o.bytes(kExtra, 8);
+    for (const ScanData& s : p.scans) { o.pod((uint8_t)s.support.known); o.pod(s.support.up); o.pod(s.support.height); }
     const bool ok = fclose(f) == 0 && o.ok;
     if (!ok) { std::remove(tmp.c_str()); error = tr("Schreibfehler (Festplatte voll?)"); return false; }
     std::rename(tmp.c_str(), path.c_str());
@@ -397,6 +488,11 @@ bool loadProject(Project& p, const std::string& path, std::string& error) {
             for (uint32_t c : fr.cells) if (c >= gridCells) { in.ok = false; break; }
         }
         q.scans.push_back(std::move(s));
+    }
+    if (in.ok && in.left >= 8) {
+        char x[8] = {0}; in.bytes(x, 8);
+        if (in.ok && !memcmp(x, kExtra, 8)) for (ScanData& s : q.scans) { uint8_t k = 0; in.pod(k); in.pod(s.support.up); in.pod(s.support.height); s.support.known = k; }
+        in.ok = true;   // extras that do not fit are ignored, the scans are complete
     }
     fclose(f);
     if (!in.ok) { error = tr("Die Projektdatei ist beschädigt oder abgeschnitten."); return false; }

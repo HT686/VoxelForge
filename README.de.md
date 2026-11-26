@@ -24,7 +24,7 @@ So bekommt ein Modell auch seine Unterseite.
 
 1. Objekt scannen, „Neuer Scan“ wählen, Objekt umlegen und erneut scannen. Die Scans müssen sich überlappen, grob ein Drittel ist ein guter Wert.
 2. **Ausrichten:** „Merkmale, Auto“ findet die Lage selbst, jeder Scan erscheint in einer eigenen Farbe. Liegen die Flächen richtig, zeigt sich ein feines Sprenkelmuster, größere einfarbige Versätze bedeuten eine falsche Lage. „Nächster Vorschlag“ hilft bei symmetrischen Objekten.
-3. Geht das nicht, hilft **Manuell:** dieselbe Stelle abwechselnd in beiden Bildern anklicken, mindestens drei weit verteilte Paare. **Marker** taugt nur, wenn das Objekt zu den Markern gleich liegt, also nicht nach dem Umlegen auf dem Drehteller.
+3. Ist die Lage nicht sicher, hilft **Manuell:** links der feste, rechts der bewegte Scan, darunter beide zusammen. Dieselbe Stelle in beiden Bildern anklicken; ein Paar genügt oft, drei weit verteilte Paare legen die Lage fest. Punkte lassen sich ziehen, Strg+Klick löscht ein Paar. **Marker** taugt nur, wenn das Objekt zu den Markern gleich liegt, also nicht nach dem Umlegen auf dem Drehteller.
 4. **Fusion** verschmilzt alle gewählten Scans zu einem Modell.
 
 Beim Erstellen des Netzes werden alle Bilder am Modell fein ausgerichtet, Fläche entfernt, durch die eine Kamera hindurchgesehen hat, etwa Fetzen oder Stützen, und die Farbe aus den besten Ansichten genommen. Fehlen dadurch echte Teile, lässt sich das in den Netz-Einstellungen und im Fusion-Dialog abschalten. Im dunklen Raum bleibt das Modell ohne Farbe.
@@ -47,10 +47,10 @@ Alles läuft über Vorschau, dann Bestätigen oder Abbrechen. Jeder Schritt läs
 Zahlen im Export sind Millimeter. Modelle stehen mit Z nach oben und der Unterseite bei Z = 0. Mit Markern gilt die Teller-Ebene als Boden.
 
 ## Stand
-Vorhanden: Live-Tiefe, Tracking über Marker und Form, Drehteller-Modus, Objektwahl und Entfernen der Unterlage über Marker, Fusion, Netz, Export, Messwerkzeug (`voxelforge-cli messen`).
+Vorhanden: Live-Tiefe, Tracking über Marker und Form, Drehteller-Modus, Objektwahl und Entfernen der Unterlage (mit Markern beim Scannen, ohne Marker nachträglich), Qualitätskarte, Hinweis bei zu wenig Form, Fusion, Netz, Export, Messwerkzeug (`voxelforge-cli messen`), Prüfung der Kalibrierung mit der Platte (`voxelforge-cli tafel`).
 Farbe: Punktfarben im Netz, Export als PLY und OBJ mit Vertex-Farben. Dafür braucht jeder Scanner eine eigene Farbkalibrierung, die noch nicht über die Oberfläche erstellt werden kann.
 Noch nicht vorhanden: Bearbeiten als Punktwolke vor der Fusion, Marker-Auswahl für die Schnittebene, Kalibrierfunktion in der Oberfläche, Textur-Atlas, Scanner-Tasten.
-Bekannt: Bei 22 cm sind Außenmaße um rund 0,3–1,3 mm zu klein, nahezu unabhängig von der Objektgröße. Ursache offen.
+Bekannt: Mit Markern sind Außenmaße um rund 0,1–0,4 mm zu klein, ohne Marker bei „Normal“ um rund 1 % zu groß, bei „Fein“ um rund 0,2 %. Für Teile, die passen müssen: Marker oder feinere Auflösung.
 
 
 ## Start, Projekte und Einstellungen

@@ -63,3 +63,20 @@ inline bool solve6(const double A[36], const double b[6], double x[6]) {
     for (int i = 5; i >= 0; i--) { double s = y[i]; for (int k = i+1; k < 6; k++) s -= L[k*6+i]*x[k]; x[i] = s / L[i*6+i]; }
     return true;
 }
+// Eigenvalues and eigenvectors of a symmetric 6x6 matrix by Jacobi rotations. vecs: column k belongs to vals[k].
+inline void eigenSym6(const double Ain[36], double vals[6], double vecs[36]) {
+    double A[36]; for (int i = 0; i < 36; i++) A[i] = Ain[i];
+    for (int i = 0; i < 36; i++) vecs[i] = (i%7 == 0) ? 1 : 0;
+    for (int sweep = 0; sweep < 40; sweep++) {
+        double off = 0; for (int i = 0; i < 6; i++) for (int j = i+1; j < 6; j++) off += A[i*6+j]*A[i*6+j];
+        if (off < 1e-24) break;
+        for (int p = 0; p < 6; p++) for (int q = p+1; q < 6; q++) {
+            if (std::fabs(A[p*6+q]) < 1e-30) continue;
+            const double th = (A[q*6+q]-A[p*6+p])/(2*A[p*6+q]), t = (th >= 0 ? 1 : -1)/(std::fabs(th)+std::sqrt(th*th+1)), c = 1/std::sqrt(t*t+1), sn = t*c;
+            for (int k = 0; k < 6; k++) { const double x = A[k*6+p], y = A[k*6+q]; A[k*6+p] = c*x-sn*y; A[k*6+q] = sn*x+c*y; }
+            for (int k = 0; k < 6; k++) { const double x = A[p*6+k], y = A[q*6+k]; A[p*6+k] = c*x-sn*y; A[q*6+k] = sn*x+c*y; }
+            for (int k = 0; k < 6; k++) { const double x = vecs[k*6+p], y = vecs[k*6+q]; vecs[k*6+p] = c*x-sn*y; vecs[k*6+q] = sn*x+c*y; }
+        }
+    }
+    for (int i = 0; i < 6; i++) vals[i] = A[i*6+i];
+}

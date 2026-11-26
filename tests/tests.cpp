@@ -18,6 +18,7 @@
 #include "i18n.hpp"
 #include "settings.hpp"
 #include "register.hpp"
+#include "simscan.hpp"
 
 // Closed box made of small triangles, optionally sheared and noisy, like a scanned box.
 static Mesh makeBox(float a, float b, float c, float shearXperZ, float noise) {
@@ -787,6 +788,21 @@ int main() {
         }
         // Parts without any overlap must not be reported as certain, whatever fits by chance.
         { const Mesh top = view(shape, V3{0,0,1}, -10), bottom = view(shape, V3{0,0,-1}, -10); auto none = registerAuto(bottom, top); CHECK(none.empty() || !none[0].confident, "Ausrichten: ohne Ueberlappung nie sicher (%zu Vorschlaege)", none.size()); }
+        // Thin walls, few distinct spots: a toy car track laid on its side, and turned over. Laid on its side the
+        // placement is found; turned over only flat walls are shared, so it may stay open, but must never be called certain.
+        {
+            const Mesh track = trackModel(), upright = scannedPart(track, {0, 0, 1}, 0.8f); std::mt19937 g(5); int found = 0, wrongSure = 0, sideCases = 0;
+            const Table up{true, {0, 0, 1}, 0.f};
+            for (V3 side : {V3{1, 0, 0}, V3{0, -1, 0}, V3{0, 0, -1}}) for (int k = 0; k < 2; k++) {
+                Mesh moved = scannedPart(track, side, 0.8f); const Pose T = randomPose(g, 100); for (V3& v : moved.vertices) v = T.apply(v); computeNormals(moved);
+                float low = 1e9f; for (const V3& v : track.vertices) low = std::min(low, dot(v, side));
+                const auto r = registerAuto(moved, upright, {}, placedTable(Table{true, side, low}, T), up);
+                const Pose truth = inversePose(T); float e = 1e9f; if (!r.empty()) { e = 0; for (size_t i = 0; i < moved.vertices.size(); i += 50) e = std::max(e, norm(r[0].srcToDst.apply(moved.vertices[i])-truth.apply(moved.vertices[i]))); }
+                if (getenv("VF_DEBUG")) printf("     Seite %.0f %.0f %.0f: Fehler max %.2f mm, %s, Ueberl. %.0f%%, Rest %.3f, Widerspr. %.1f%%, fest %.3f\n", side.x, side.y, side.z, e, !r.empty() && r[0].confident ? "sicher" : "unsicher", r.empty() ? 0.f : 100*r[0].overlap, r.empty() ? 0.f : r[0].rmsMm, r.empty() ? 0.f : 100*r[0].conflict, r.empty() ? 0.f : r[0].pinned);
+                const bool right = e < 1.f; if (side.z == 0) { sideCases++; found += right; } wrongSure += !r.empty() && r[0].confident && !right;
+            }
+            CHECK(found >= sideCases-1 && !wrongSure, "Ausrichten duenner Waende: auf der Seite %d von %d gefunden, %d falsche als sicher", found, sideCases, wrongSure);
+        }
         // Rough start, then fine alignment.
         const double nudge[6] = {0.04, -0.03, 0.02, 1.2, -0.8, 0.9}; const RegisterResult fine = refineRegistration(src, dst, mul(expTwist(nudge), truth), 4);
         { double e = 0; for (const V3& p : src.vertices) e = std::max(e, (double)norm(fine.srcToDst.apply(p)-truth.apply(p))); CHECK(fine.ok && e < 0.3, "Feinausrichtung: aus grober Lage (%.3f mm)", e); }

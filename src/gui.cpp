@@ -55,6 +55,7 @@ struct Commands {
     std::atomic<float> voxel{0.5f};
     std::atomic<int> roll{0};
     std::atomic<int> compute{0};
+    std::atomic<bool> qualityMap{true};
 };
 void depthToRgb(const DepthMap& d, const DepthMap& used, std::vector<uint8_t>& rgb) {
     rgb.resize((size_t)d.width*d.height*3);
@@ -111,11 +112,7 @@ void worker(Shared& sh, Commands& cmd, Pipeline& pipe) {
         std::vector<uint8_t> rgb; depthToRgb(pipe.depth(), pipe.objectDepth(), rgb);
         std::vector<uint8_t> prev; bool hasPrev = false;
         if (cmd.scanning && frameCount % 2 == 0) {
-            std::vector<uint8_t> gray; pipe.renderPreview(640, 400, gray); prev.resize(gray.size()*4);
-            for (size_t i = 0; i < gray.size(); i++) {   // empty stays transparent, the surface is a cool steel
-                const int v = gray[i]; uint8_t* o = prev.data()+4*i;
-                o[0] = (uint8_t)(v*.80f); o[1] = (uint8_t)(v*.88f); o[2] = (uint8_t)v; o[3] = v ? 255 : 0;
-            }
+            pipe.renderPreview(640, 400, prev, cmd.qualityMap);
             hasPrev = true;
         }
         auto now = std::chrono::steady_clock::now();
@@ -335,7 +332,7 @@ int main() {
         { const float vox[] = {0.15f, 0.25f, 0.5f, 1.f}; for (int i = 0; i < 4; i++) if (std::fabs(vox[i]-cmd.voxel.load()) < 1e-4f) voxelChoice = i; }   // the one-click process may have changed it
         if (meshReady.exchange(false)) {
             if (meshThread.joinable()) meshThread.join();
-            if (!scanMesh.indices.empty()) { repairManifold(scanMesh); edit.newMesh(std::move(scanMesh), scanMeshVoxel); scanMesh = Mesh{}; }
+            if (!scanMesh.indices.empty()) { repairManifold(scanMesh); edit.newMesh(std::move(scanMesh), scanMeshVoxel); scanMesh = Mesh{}; if (pipe.supportRemoved()) forge::toast(tr("Unterlage ohne Marker erkannt und entfernt."), forge::Toast::Info); }
             else forge::toast(tr("Der Scan ergibt noch kein Netz. Länger oder näher scannen."), forge::Toast::Warning);
         }
         ImGui_ImplOpenGL3_NewFrame(); ImGui_ImplGlfw_NewFrame();
@@ -446,6 +443,8 @@ int main() {
             if (forge::collapsible(tr("Erweitert"))) {
                 if (turntableUi && forge::slider(tr("Objektbereich"), &regionUi, 0.5f, 2.5f, "%.1f x")) cmd.regionScale = regionUi;
                 if (forge::toggle(tr("Unterlage entfernen"), &removeBaseUi)) { cmd.removeBase = removeBaseUi; cmd.resetModel = true; }
+                { bool q = cmd.qualityMap; if (forge::toggle(tr("Qualitätskarte"), &q)) cmd.qualityMap = q; }
+                if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", tr("Färbt das Modell im Scan: rot, wo es noch wenige Bilder gesehen haben, grün, wo genug. Weiterscannen, bis alles grün ist."));
                 if (forge::toggle(tr("Belichtung automatisch"), &autoExp)) cmd.autoExposure = autoExp;
                 if (autoExp) exposureUi = exposure;
                 ImGui::BeginDisabled(autoExp);
@@ -537,6 +536,7 @@ int main() {
                 const bool fewMarkers = st.markersDetected < 5;
                 forge::chipAt(dl, hud, b, fewMarkers ? forge::amber : forge::textDim, IC_TARGET); hud.y += line;
                 if (st.baseFound) { forge::chipAt(dl, hud, tr("Unterlage erkannt"), forge::textDim, IC_LAYERS); hud.y += line; }
+                if (scanning && st.shapeWeak && st.state == TrackState::Good) { forge::chipAt(dl, hud, tr("Wenig Form im Bild: Die Lage kann verrutschen. Mehr vom Objekt ins Bild nehmen oder Marker verwenden."), forge::amber, IC_TRIANGLE_ALERT); hud.y += line; }
                 if (scanning && st.turnDegPerFrame > 6.f) { forge::chipAt(dl, hud, tr("Langsamer drehen"), forge::amber, IC_TRIANGLE_ALERT); hud.y += line; }
                 if (fewMarkers && turntableUi && st.medianDepth > 0) { forge::chipAt(dl, hud, tr("Teller ganz ins Bild rücken, mindestens 5 Marker"), forge::amber, IC_INFO); hud.y += line; }
             }

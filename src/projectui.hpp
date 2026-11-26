@@ -50,10 +50,13 @@ public:
     bool buildMerged(float voxelMm, int minWeight, bool keepAllParts, Mesh& out, std::string& error);
     std::string describe() const;
 private:
-    Pipeline& pipe_; EditUi& edit_; Project project_; MeshView view_, viewB_;
+    Pipeline& pipe_; EditUi& edit_; Project project_; MeshView view_, viewB_, viewC_;
     std::thread job_; std::atomic<bool> jobRunning_{false}, jobDone_{false}; std::function<void()> jobFinish_;
     std::mutex labelMutex_; std::string jobLabel_; std::atomic<float> jobProgress_{-1};
     void startJob(const std::string& label, std::function<void()> work, std::function<void()> finish);
+    std::string supportCut_;          // scans that lost their support surface in a worker, guarded by labelMutex_
+    void cutSupports();
+    void reportSupports();
     std::string message;   // last message, for scripted checks
     void say(const std::string& text, bool ok);
     // Alignment.
@@ -71,9 +74,18 @@ private:
     void showManualViews();
     Pose proposedPlacement(size_t scan) const;
     std::shared_ptr<Mesh> combined_;
-    int fixedScan_ = 0, movingScan_ = 1; std::vector<V3> fixedPoints_, movingPoints_;
-    void pickInto(MeshView& view, const Mesh& mesh, float x, float y, std::vector<V3>& points);
-    void drawPoints(MeshView& view, const std::vector<V3>& points, ImVec2 origin, ImU32 color);
+    // Manual alignment: the same spots picked on both scans, in each scan's own coordinates. Pair i is point i on both sides.
+    struct PickPoint { V3 p, n; };
+    int fixedScan_ = 0, movingScan_ = 1; std::vector<PickPoint> fixedPoints_, movingPoints_;
+    struct Press { int view = -1; ImVec2 at; bool moved = false; int point = -1; };
+    Press press_;                     // a left press in one of the two picking views, until released
+    Pose livePose_; bool liveValid_ = false, mergedReset_ = true; std::vector<float> pairApart_;
+    const Mesh* pickMesh(const ScanData& s) const { return s.cloud ? s.cloud.get() : s.overview.get(); }
+    bool pickSurface(MeshView& view, const ScanData& s, float x, float y, PickPoint& out);
+    void pickView(MeshView& view, int side, ImVec2 size);
+    void pointsChanged();             // after any change of the points: the live preview follows
+    void showMerged();
+    void removePair(size_t i);
     void oneView(MeshView& view, ImVec2 size, const char* title, const Mesh* pickMesh, std::vector<V3>* points);
     // Fusion dialog.
     bool fusionRequest_ = false; int fusionVoxel_ = 2, fusionNoise_ = 15; bool fusionKeepParts_ = false, fusionClean_ = true;
@@ -82,6 +94,9 @@ private:
     // Files and removing.
     char path_[1024] = ""; bool dirty_ = false; int removeIndex_ = -1; bool removeRequest_ = false;
     void removeDialog();
+    int menuIndex_ = -1, renameIndex_ = -1; bool renameRequest_ = false; char renameText_[128] = "";
+    void scanMenu(size_t i);
+    void renameDialog();
     void removeScan(size_t i);
     void saveTo(const std::string& file);
     int reviewScan_ = -1; bool reviewDirty_ = false; MeshView reviewView_;

@@ -33,7 +33,9 @@ public:
     GLuint render(int w, int h);
     // Everything below refers to the last render, with pixels counted from the top left of the image.
     bool project(V3 p, float& x, float& y, float& depth) const;
-    long pickTriangle(int x, int y);                  // -1: nothing there
+    long pickTriangle(int x, int y);                  // -1: nothing there. In a point cloud: the point
+    long pickNear(int x, int y, int radiusPx);        // the same, nearest hit within the radius, for gaps between points
+    bool pointMode() const { return pointMode_; }
     void ray(float x, float y, V3& origin, V3& direction) const;
     void prepareDepth();                              // call once before isVisible
     bool isVisible(float x, float y, float depth, float toleranceMm) const;
@@ -46,7 +48,7 @@ private:
     bool pickValid_ = false;
     float floorZ_ = 0, floorR_ = 100;   // in Z-up coordinates, around the model
     V3 floorCenter_;
-    bool hasColor_ = false, hasFlags_ = false, pointMode_ = false; float pointSpacing_ = 0.25f;
+    bool hasColor_ = false, hasFlags_ = false, pointMode_ = false; float pointSpacing_ = 0.25f, pointSize_ = 2.f;
     GLsizei count_ = 0, lineCount_ = 0; int w_ = 0, h_ = 0; V3 center_; float radius_ = 100, yaw_ = 0, pitch_ = 0, zoom_ = 1, panX_ = 0, panY_ = 0;
     float model_[9] = {1, 0, 0, 0, 1, 0, 0, 0, 1};   // mesh -> Z up
     float R_[9] = {1, 0, 0, 0, 1, 0, 0, 0, 1}, mvp_[16] = {0}, t_[3] = {0, 0, 0}, near_ = 1, far_ = 1000, ft_ = 1;

@@ -202,7 +202,8 @@ GLuint MeshView::render(int w, int h) {
     glBindVertexArray(vao_);
     if (pointMode_) {
         // As large as the gaps between points on screen. The view shows about 2.6 radii at zoom 1.
-        glPointSize(std::clamp(1.6f*pointSpacing_*h/(radius_*2.6f*zoom_), 1.5f, 8.f));
+        pointSize_ = std::clamp(1.6f*pointSpacing_*h/(radius_*2.6f*zoom_), 1.5f, 8.f);
+        glPointSize(pointSize_);
         glDrawArrays(GL_POINTS, 0, count_);
     }
     else glDrawElements(GL_TRIANGLES, count_, GL_UNSIGNED_INT, nullptr);
@@ -239,7 +240,9 @@ void MeshView::renderPick() {
     glBindFramebuffer(GL_FRAMEBUFFER, pickFbo_); glViewport(0, 0, w_, h_); glDisable(GL_SCISSOR_TEST); glDisable(GL_BLEND); glEnable(GL_DEPTH_TEST);
     const GLuint none[4] = {0, 0, 0, 0}; const GLfloat far1 = 1; glClearBufferuiv(GL_COLOR, 0, none); glClearBufferfv(GL_DEPTH, 0, &far1);
     glUseProgram(pickProg_); glUniformMatrix4fv(glGetUniformLocation(pickProg_, "mvp"), 1, GL_FALSE, mvp_);
-    glBindVertexArray(vao_); if (!pointMode_) glDrawElements(GL_TRIANGLES, count_, GL_UNSIGNED_INT, nullptr);
+    glBindVertexArray(vao_);
+    if (pointMode_) { glPointSize(pointSize_); glDrawArrays(GL_POINTS, 0, count_); }   // each point is one primitive: its id is the vertex
+    else glDrawElements(GL_TRIANGLES, count_, GL_UNSIGNED_INT, nullptr);
     glBindVertexArray(0); glUseProgram(0); glDisable(GL_DEPTH_TEST); glBindFramebuffer(GL_FRAMEBUFFER, 0);
     pickValid_ = true; depthValid_ = false;
 }
@@ -256,6 +259,21 @@ long MeshView::pickTriangle(int x, int y) {
     glPixelStorei(GL_PACK_ALIGNMENT, 1); glReadPixels(x, h_-1-y, 1, 1, GL_RED_INTEGER, GL_UNSIGNED_INT, &id);
     glBindFramebuffer(GL_READ_FRAMEBUFFER, 0);
     return (long)id-1;
+}
+long MeshView::pickNear(int x, int y, int radius) {
+    if (!w_ || x < 0 || y < 0 || x >= w_ || y >= h_) return -1;
+    renderPick();
+    const int x0 = std::max(0, x-radius), x1 = std::min(w_-1, x+radius), y0 = std::max(0, y-radius), y1 = std::min(h_-1, y+radius);
+    const int bw = x1-x0+1, bh = y1-y0+1; std::vector<GLuint> ids((size_t)bw*bh, 0);
+    glBindFramebuffer(GL_READ_FRAMEBUFFER, pickFbo_); glReadBuffer(GL_COLOR_ATTACHMENT0); glPixelStorei(GL_PACK_ALIGNMENT, 1);
+    glReadPixels(x0, h_-1-y1, bw, bh, GL_RED_INTEGER, GL_UNSIGNED_INT, ids.data());
+    glBindFramebuffer(GL_READ_FRAMEBUFFER, 0);
+    long best = -1; int bd = 1 << 30;
+    for (int j = 0; j < bh; j++) for (int i = 0; i < bw; i++) {
+        const GLuint id = ids[(size_t)j*bw+i]; if (!id) continue;
+        const int dx = x0+i-x, dy = (h_-1-(h_-1-y1+j))-y, d2 = dx*dx+dy*dy; if (d2 < bd) { bd = d2; best = (long)id-1; }
+    }
+    return best;
 }
 void MeshView::ray(float x, float y, V3& o, V3& d) const {
     const V3 tv{t_[0], t_[1], t_[2]};

@@ -17,12 +17,12 @@ Pipeline::Pipeline(const PipelineOptions& o) : options(o) {
 }
 void Pipeline::reset() {
     std::lock_guard<std::mutex> g(mutex_);
-    tsdf_ = std::make_unique<Tsdf>(options.voxelMm);
+    tsdf_ = std::make_unique<Tsdf>(options.trackVoxel());
     pose_ = Pose{};
     stats_ = PipelineStats{};
     region_.valid = false;
     markers_.reset(); hasMarkerPose_ = false; markerWeak_ = false; unconfirmed_ = 0; hasLastIntegrated_ = false; base_ = BasePlane{}; useObjectDepth_ = false;
-    keyframes_.clear(); relocCursor_ = 0; wasLost_ = false;
+    keyframes_.clear(); relocCursor_ = 0; wasLost_ = false; weakSmooth_ = 0.3f;
     session_.clear(); sessionBytes_ = 0;
 }
 
@@ -52,12 +52,21 @@ bool Pipeline::track(const DepthMap& d) {
     size_t validCells = 0; for (float z : d.z) validCells += z > 0;
     const int coarse = std::clamp((int)std::sqrt(validCells/1500.f), 1, 16), middle = std::max(1, coarse/2), fine = std::max(1, coarse/4);
     const int strides[] = {coarse, coarse, coarse, middle, middle, middle, fine, fine};
-    float rms = 0, inlier = 0; int used = 0;
+    // Rotation about the middle of the visible points, scaled by their spread: then turning and shifting weigh
+    // alike, and the weakest direction of the fit can be found and told apart from the others.
+    V3 mid{}; float spread = 1;
+    { double sx = 0, sy = 0, sz = 0, s2 = 0; long k = 0; const int st = coarse*2;
+      for (int j = 0; j < d.height; j += st) for (int i = 0; i < d.width; i += st) { const float z = d.z[j*d.width+i]; if (z <= 0) continue; const V3 w = T.apply(V3{(i-d.cx)/d.fx*z, (j-d.cy)/d.fy*z, z}); sx += w.x; sy += w.y; sz += w.z; k++; }
+      if (k) { mid = {(float)(sx/k), (float)(sy/k), (float)(sz/k)};
+        for (int j = 0; j < d.height; j += st) for (int i = 0; i < d.width; i += st) { const float z = d.z[j*d.width+i]; if (z <= 0) continue; const V3 w = T.apply(V3{(i-d.cx)/d.fx*z, (j-d.cy)/d.fy*z, z})-mid; s2 += dot(w, w); }
+        spread = std::max(5.f, (float)std::sqrt(s2/k)); } }
+    const float invSpread = 1/spread;
+    float rms = 0, inlier = 0, coverage = 0, weakest = 0; int used = 0;
     for (int stride : strides) {
-        double A[36] = {0}, b[6] = {0}; double e2 = 0; long n = 0, valid = 0;
+        double A[36] = {0}, b[6] = {0}; double e2 = 0; long n = 0, valid = 0, covered = 0;
         #pragma omp parallel
         {
-            double la[36] = {0}, lb[6] = {0}, le = 0; long ln = 0, lv = 0;
+            double la[36] = {0}, lb[6] = {0}, le = 0; long ln = 0, lv = 0, lc = 0;
             #pragma omp for schedule(static) nowait
             for (int j = 0; j < d.height; j += stride) {
                 for (int i = 0; i < d.width; i += stride) {
@@ -72,36 +81,49 @@ bool Pipeline::track(const DepthMap& d) {
                     if (u < 0 || v < 0 || u >= rw || v >= rh) continue;
                     V3 nrm = ray_.normal[v*rw+u];
                     if (nrm.x == 0 && nrm.y == 0 && nrm.z == 0) continue;
+                    lc++;
                     V3 q = ray_.vertex[v*rw+u];
                     V3 diff = w - q;
                     if (norm(diff) > options.maxPointDist) continue;
                     float r = dot(diff, nrm);
                     float wgt = std::fabs(r) < 1.f ? 1.f : 1.f/std::fabs(r);  // Huber, 1 mm
                     wgt *= binWeight[std::min(kBins-1, (int)((nrm.y+1)*0.5f*kBins))*kBins + std::min(kBins-1, (int)((nrm.x+1)*0.5f*kBins))];
-                    V3 cr = cross(w, nrm);
+                    V3 cr = cross(w-mid, nrm)*invSpread;
                     const double J[6] = {cr.x, cr.y, cr.z, nrm.x, nrm.y, nrm.z};
                     for (int a = 0; a < 6; a++) { lb[a] -= wgt*J[a]*r; for (int c2 = 0; c2 <= a; c2++) la[a*6+c2] += wgt*J[a]*J[c2]; }
                     le += r*r; ln++;
                 }
             }
             #pragma omp critical
-            { for (int a = 0; a < 36; a++) A[a] += la[a]; for (int a = 0; a < 6; a++) b[a] += lb[a]; e2 += le; n += ln; valid += lv; }
+            { for (int a = 0; a < 36; a++) A[a] += la[a]; for (int a = 0; a < 6; a++) b[a] += lb[a]; e2 += le; n += ln; valid += lv; covered += lc; }
         }
         for (int a = 0; a < 6; a++) for (int c = a+1; c < 6; c++) A[a*6+c] = A[c*6+a];
         used = (int)n;
-        inlier = valid ? (float)n/valid : 0;
+        // Points beyond the model are new surface, not a sign of a wrong pose: the share counts only those
+        // that land on the model. A young model covers little of the next frame, and the scan would stop there.
+        inlier = covered ? (float)n/covered : 0;
+        coverage = valid ? (float)covered/valid : 0;
         rms = n ? std::sqrt((float)(e2/n)) : 1e9f;
         if (n < 30) { used = 0; break; }   // coarse levels hold few points; the final count is checked below
+        // How firmly the visible surface holds the pose in its weakest direction. Holding such a direction
+        // fixed was tried and made hand scans worse: the hand really moves that way, see FINDINGS.
+        { double vals[6], vecs[36]; eigenSym6(A, vals, vecs); double top = 0, low = 1e300; for (double l : vals) { top = std::max(top, l); low = std::min(low, std::max(0., l)); } weakest = top > 0 ? (float)std::sqrt(low/top) : 0; }
         for (int a = 0; a < 6; a++) A[a*7] *= 1.0 + 1e-6;
-        double x[6];
-        if (!solve6(A, b, x)) break;
-        // The update acts in world coordinates, around the world origin.
+        double xs[6];
+        if (!solve6(A, b, xs)) break;
+        // Back from the turn about the middle to the update about the world origin used by expTwist.
+        const V3 om{(float)(xs[0]*invSpread), (float)(xs[1]*invSpread), (float)(xs[2]*invSpread)};
+        const V3 vt = V3{(float)xs[3], (float)xs[4], (float)xs[5]}-cross(om, mid);
+        const double x[6] = {om.x, om.y, om.z, vt.x, vt.y, vt.z};
         Pose dT = expTwist(x);
         T = mul(dT, T);
     }
-    stats_.inlierRatio = inlier; stats_.rmsMm = rms; stats_.icpPoints = used;
+    stats_.weakest = weakest;
+    stats_.inlierRatio = inlier; stats_.rmsMm = rms; stats_.icpPoints = used; stats_.coverage = coverage;
     V3 dt = T.t - pose_.t;
-    bool ok = used >= 200 && inlier >= options.minInlierRatio && rms <= options.maxRmsMm && norm(dt) < 60.f;
+    // A model of a few frames has gaps, finer voxels more: then it may cover little of the next frame although that fits.
+    const bool young = stats_.integratedFrames < 15;
+    bool ok = used >= 200 && inlier >= options.minInlierRatio && (young || coverage >= options.minCoverage) && rms <= options.maxRmsMm && norm(dt) < 60.f;
     if (ok) pose_ = T;
     return ok;
 }
@@ -274,7 +296,7 @@ bool Pipeline::relocalize(const DepthMap& d) {
     bool found = false; Pose bestPose; float bestScore = 1e9f, bestInl = 0, bestRms = 0; int bestPts = 0;
     auto consider = [&](const Pose& start) {
         pose_ = start;
-        if (track(d) && stats_.inlierRatio >= options.relocMinInliers && stats_.rmsMm <= options.relocMaxRmsMm) {
+        if (track(d) && stats_.inlierRatio >= options.relocMinInliers && stats_.coverage >= options.relocMinCoverage && stats_.rmsMm <= options.relocMaxRmsMm) {
             const float score = stats_.rmsMm/stats_.inlierRatio;
             if (score < bestScore) { bestScore = score; bestPose = pose_; bestInl = stats_.inlierRatio; bestRms = stats_.rmsMm; bestPts = stats_.icpPoints; found = true; }
         }
@@ -303,7 +325,7 @@ void Pipeline::trackAndIntegrate(const DepthMap& dIn) {
         size_t valid = 0; for (float z : d.z) valid += z > 0;
         if (valid < 800*(size_t)(d.width/640)*(d.width/640) || (region_.enabled && !useObjectDepth_)) { stats_.state = TrackState::Waiting; region_.valid = false; return; }
     }
-    lastFx_ = d.fx; lastFy_ = d.fy; lastCx_ = d.cx; lastCy_ = d.cy;
+    lastFx_ = d.fx; lastFy_ = d.fy; lastCx_ = d.cx; lastCy_ = d.cy; lastW_ = d.width; lastH_ = d.height;
     auto t0 = Clock::now();
     bool ok = true;
     if (stats_.integratedFrames > 0) {
@@ -311,7 +333,7 @@ void Pipeline::trackAndIntegrate(const DepthMap& dIn) {
             // Markers give the absolute pose. The surface may only fine-tune it, not move it far.
             const Pose before = pose_;
             pose_ = markerPose_;
-            stats_.markerPose = true;
+            stats_.markerPose = true; stats_.shapeWeak = false;
             if (markerWeak_) {
                 // Only a suggestion: few markers, or found from distances, where a ring can look alike
                 // when turned. Without the surface agreeing this frame stays out of the model.
@@ -341,6 +363,9 @@ void Pipeline::trackAndIntegrate(const DepthMap& dIn) {
             stats_.markerPose = false;
             // After a loss the old pose means nothing: only the strict search may resume tracking.
             ok = wasLost_ ? relocalize(d) : (track(d) || relocalize(d));
+            // Flat walls, a cylinder or a ball let the pose slide unseen. Smoothed, so that a single frame does not flicker.
+            // In scans that tracked well it stayed above 0.065 in 99 % of frames, where it slid it was 0.02 to 0.05.
+            if (ok) { weakSmooth_ += (stats_.weakest-weakSmooth_)*0.15f; stats_.shapeWeak = weakSmooth_ < 0.05f; }
         }
         wasLost_ = !ok;
     }
@@ -460,19 +485,25 @@ int Pipeline::nextExposure(const StereoFrame& f, int current) const {
     return std::clamp(next, 200, 12000);
 }
 
-void Pipeline::renderPreview(int w, int h, std::vector<uint8_t>& gray) {
+void Pipeline::renderPreview(int w, int h, std::vector<uint8_t>& rgba, bool quality) {
     std::lock_guard<std::mutex> g(mutex_);
-    gray.assign(w*h, 0);
+    rgba.assign((size_t)w*h*4, 0);
     if (!lastFx_ || stats_.integratedFrames == 0) return;
-    const float sx = (float)w/(lastCx_*2 > 0 ? depth_.width : 1), sy = (float)h/depth_.height;
+    const float sx = (float)w/std::max(1, lastW_), sy = (float)h/std::max(1, lastH_);
     RayImage img;
-    tsdf_->raycast(pose_, w, h, lastFx_*sx, lastFy_*sy, lastCx_*sx, lastCy_*sy, options.zMin, options.zMax, img);
+    tsdf_->raycast(pose_, w, h, lastFx_*sx, lastFy_*sy, lastCx_*sx, lastCy_*sy, options.zMin, options.zMax, img, quality);
     V3 light = normalized(pose_.rot(V3{0.2f, -0.3f, -1.f}));
     for (int i = 0; i < w*h; i++) {
         V3 n = img.normal[i];
         if (n.x == 0 && n.y == 0 && n.z == 0) continue;
-        float l = std::max(0.f, dot(n, light));
-        gray[i] = (uint8_t)(40 + 215*l);
+        const float v = 40 + 215*std::max(0.f, dot(n, light)); uint8_t* o = rgba.data()+4*(size_t)i;
+        if (quality) {
+            // As the original's quality map: red where few frames saw it, through yellow to green where enough did.
+            const float q = std::clamp((img.seen[i]-kSeenLow)/(float)(kSeenGood-kSeenLow), 0.f, 1.f);
+            const float r = q < 0.5f ? 1.f : 2-2*q, gr = q < 0.5f ? 0.35f+1.3f*q : 1.f, b = 0.25f;
+            o[0] = (uint8_t)(v*r); o[1] = (uint8_t)(v*gr*0.9f); o[2] = (uint8_t)(v*b);
+        } else { o[0] = (uint8_t)(v*.80f); o[1] = (uint8_t)(v*.88f); o[2] = (uint8_t)v; }   // a cool steel
+        o[3] = 255;
     }
 }
 void Pipeline::rememberFrame(const DepthMap& d, const StereoFrame* f) {
@@ -521,16 +552,19 @@ bool Pipeline::takeScan(ScanData& out) {
 void Pipeline::buildMesh(const MeshOptions& opt, Mesh& out) {
     std::lock_guard<std::mutex> g(mutex_);
     const BasePlane b = markers_.basePlane(pose_.t);
-    const V3 up = b.valid ? b.normal : pose_.rot(cameraUp(options.roll));
+    const V3 up = b.valid ? b.normal : pose_.rot(cameraUp(options.roll)); V3 orientUp = up;
+    supportRemoved_ = false;
     if (opt.cleanUp && !session_.empty()) {
         // The same path as several scans: fine alignment, clean-up and color all need the frames.
         Project one; one.scans.emplace_back(); ScanData& s = one.scans[0];
         s.frames.swap(session_); s.grid = sessionGrid_; s.colorCalib = colorCalib_; s.up = up; s.placed = true;
-        std::string error; const bool ok = fuseProject(one, tsdf_->voxel(), opt, out, error);
+        // Without markers the surface it stood on is still in the frames: cut out, as the project does.
+        if (!b.valid && options.removeBase && removeSupport(s)) { supportRemoved_ = true; orientUp = s.up; }
+        std::string error; const bool ok = fuseProject(one, options.voxelMm, opt, out, error);
         s.frames.swap(session_);
         if (ok) return;
         out = Mesh{};
     }
     extractMesh(*tsdf_, opt, out);
-    if (opt.upright) orientUpright(out, up);
+    if (opt.upright) orientUpright(out, orientUp);
 }

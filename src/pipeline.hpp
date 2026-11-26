@@ -1,5 +1,7 @@
 #pragma once
 // Depth -> tracking -> fusion. Call process() once per stereo pair from one thread.
+#include <algorithm>
+#include <atomic>
 #include <memory>
 #include <mutex>
 #include <string>
@@ -30,6 +32,9 @@ struct PipelineStats {
     TrackState state = TrackState::Idle;
     float stereoMs = 0, trackMs = 0, fusionMs = 0, totalMs = 0;
     float validDepth = 0, inlierRatio = 0, rmsMm = 0, medianDepth = 0;
+    float coverage = 0;           // share of the frame's points that land on the model
+    float weakest = 0;            // how firmly the visible surface holds the pose in its weakest direction, 0..1
+    bool shapeWeak = false;       // for a while too little shape in view to hold the pose without markers
     int integratedFrames = 0, lostFrames = 0, icpPoints = 0, relocations = 0;
     bool baseFound = false;
     int markersMatched = 0, markersInMap = 0; float markerRmsMm = 0; bool markerPose = false;
@@ -39,10 +44,17 @@ struct PipelineStats {
     bool poseUnconfirmed = false; // the markers suggest a pose, but the surface does not agree yet
 };
 struct PipelineOptions {
-    float voxelMm = 0.5f;
+    float voxelMm = 0.5f;         // of the finished model
+    // Tracking against a coarse model shifts every surface outward: a 60 mm cube grew by about 0.1 mm per 0.1 mm of
+    // voxel without markers. A finer live model than the chosen one would help, but tracking against it lost whole
+    // recorded scans that run well at 0.5 mm (see FINDINGS), so it is off: 0 means the chosen voxel.
+    float maxTrackVoxelMm = 0.f;
+    float trackVoxel() const { return maxTrackVoxelMm > 0 ? std::min(voxelMm, maxTrackVoxelMm) : voxelMm; }
     float zMin = 120.f, zMax = 400.f;   // working distance, see ScanProfile
     float maxPointDist = 8.f;     // ICP association limit in mm
-    float minInlierRatio = 0.35f;
+    float minInlierRatio = 0.35f; // of the points that land on the model
+    float minCoverage = 0.2f;     // of the frame's points that land on the model at all
+    float relocMinCoverage = 0.4f;
     float maxRmsMm = 2.0f;
     float relocMinInliers = 0.7f; // stricter than normal tracking: a wrong match would damage the model
     float relocMaxRmsMm = 1.0f;
@@ -89,9 +101,12 @@ public:
     const Pose& pose() const { return pose_; }
     const std::vector<Marker3D>& detectedMarkers() const { return detected_; }
     const PipelineStats& stats() const { return stats_; }
-    // Shaded model view from the current camera, grayscale.
-    void renderPreview(int w, int h, std::vector<uint8_t>& gray);
+    // Shaded model view from the current camera, RGBA, empty is transparent. quality: colored by how often
+    // the surface was seen, red below kSeenLow frames to green from kSeenGood on.
+    void renderPreview(int w, int h, std::vector<uint8_t>& rgba, bool quality);
+    static constexpr int kSeenLow = 5, kSeenGood = 45;
     void buildMesh(const MeshOptions& opt, Mesh& out);
+    bool supportRemoved() const { return supportRemoved_; }   // the last buildMesh cut out the surface the object stood on
     // Rebuilds the model from the stored frames and their poses, for example at another
     // resolution. Needs no new scan. The poses stay as they were during the scan.
     bool rebuildModel(float voxelMm, std::string& report);
@@ -110,6 +125,7 @@ private:
     std::vector<Pose> keyframes_;
     size_t relocCursor_ = 0;
     bool wasLost_ = false;
+    float weakSmooth_ = 0.3f;
     std::vector<ScanFrame> session_;
     size_t sessionBytes_ = 0;
     DepthMap sessionGrid_;
@@ -145,6 +161,7 @@ private:
     PipelineStats stats_;
     bool scanning_ = false;
     RayImage ray_;
-    float lastFx_ = 0, lastFy_ = 0, lastCx_ = 0, lastCy_ = 0;
+    float lastFx_ = 0, lastFy_ = 0, lastCx_ = 0, lastCy_ = 0; int lastW_ = 0, lastH_ = 0;
     std::mutex mutex_;
+    std::atomic<bool> supportRemoved_{false};
 };

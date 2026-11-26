@@ -9,6 +9,7 @@
 #include "color.hpp"
 #include "math.hpp"
 #include "mesh.hpp"
+#include "register.hpp"
 #include "stereo.hpp"
 
 // What a second pass needs from one frame. Depth is sparse: only the object.
@@ -27,6 +28,7 @@ struct ScanData {
     Pose placement;                // from this scan into the project
     bool placed = false;           // placement is known. The first scan is placed by definition.
     bool included = true;          // part of the fusion
+    Table support;                 // the flat surface it stood on, found and cut out afterwards when there were no markers
     std::shared_ptr<Mesh> overview;   // quick coarse model for alignment and display
     std::shared_ptr<Mesh> cloud;      // the measured points thinned out, for looking at this scan
     float cloudSpacingMm = 0.25f;
@@ -59,6 +61,16 @@ float colorFromFrames(Mesh& m, const std::vector<ScanView>& scans, float toleran
 // The points of a scan in its own coordinates, one per small cube of space, with normals. A cube needs several
 // measurements, so single stray points stay out. Keeps a result it already has.
 void buildPointCloud(ScanData& scan);
+// The table the scan stood on, from its markers, in the scan's coordinates. Known only when the markers lie in
+// one plane and the object stands on it: markers stuck on the object itself say nothing about a table.
+// Needs the overview.
+Table scanTable(const ScanData& scan);
+// Without markers a scan keeps the surface it stood on, a turntable plate for example. Finds it as the largest plane
+// with the object on one side and the cameras on the same side, and cuts it out of the frames, so that overview,
+// point cloud and fusion no longer see it. Changes the scan; true if something was cut. Needs nothing prepared.
+bool removeSupport(ScanData& scan);
+// The same table seen from the project, after the scan's placement.
+Table placedTable(const Table& t, const Pose& placement);
 // Quick model of one scan in its own coordinates.
 void buildOverview(ScanData& scan);
 // Fuses the included scans at their placements. minWeight: how often a voxel must be seen.

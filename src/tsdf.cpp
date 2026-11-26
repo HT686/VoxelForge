@@ -202,9 +202,10 @@ struct Sampler {
 };
 }
 
-void Tsdf::raycast(const Pose& T, int w, int h, float fx, float fy, float cx, float cy, float zMin, float zMax, RayImage& out) const {
+void Tsdf::raycast(const Pose& T, int w, int h, float fx, float fy, float cx, float cy, float zMin, float zMax, RayImage& out, bool withSeen) const {
     out.width = w; out.height = h;
     out.vertex.assign(w*h, V3{}); out.normal.assign(w*h, V3{});
+    if (withSeen) out.seen.assign(w*h, 0); else out.seen.clear();
     const float iv = 1.f/voxel_, bs = voxel_*kBlockSide;
     #pragma omp parallel for schedule(dynamic, 4)
     for (int j = 0; j < h; j++) {
@@ -236,7 +237,10 @@ void Tsdf::raycast(const Pose& T, int w, int h, float fx, float fy, float cx, fl
                     ok &= s.trilinear(qx+1, qy, qz, a) && s.trilinear(qx-1, qy, qz, b); g.x = a-b;
                     ok = ok && s.trilinear(qx, qy+1, qz, a) && s.trilinear(qx, qy-1, qz, b); g.y = a-b;
                     ok = ok && s.trilinear(qx, qy, qz+1, a) && s.trilinear(qx, qy, qz-1, b); g.z = a-b;
-                    if (ok && dot(g, g) > 1e-10f) { out.vertex[j*w+i] = q; out.normal[j*w+i] = normalized(g); }
+                    if (ok && dot(g, g) > 1e-10f) {
+                        out.vertex[j*w+i] = q; out.normal[j*w+i] = normalized(g);
+                        if (withSeen) { const Voxel* v = s.get((int)std::lround(qx), (int)std::lround(qy), (int)std::lround(qz)); out.seen[j*w+i] = v ? v->seen : 0; }
+                    }
                     break;
                 }
                 if (have && prev < 0 && val > 0) break; // back side

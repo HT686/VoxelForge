@@ -819,6 +819,17 @@ int main() {
             ScanData s; s.name = name; DepthMap d; d.width = 320; d.height = 200; d.fx = 400; d.fy = 400; d.cx = 160; d.cy = 100; s.grid = d; s.grid.z.clear();
             for (int f = 0; f < 6; f++) { ScanFrame fr; fr.pose = Pose{}; fr.pose.t = V3{(float)f, 0, 0}; for (int y = 40; y < 160; y++) for (int x = 60; x < 260; x++) { fr.cells.push_back((uint32_t)(y*320+x)); fr.z.push_back(300.f); } s.frames.push_back(fr); }
             s.placement = worldMove; return s; };
+        // Points removed from the point cloud leave the frames, a fresh cloud does not bring them back, and undo restores everything.
+        {
+            ScanData s = makeScan("Schnitt", Pose{}); size_t before = 0; for (const ScanFrame& f : s.frames) before += f.cells.size();
+            buildPointCloud(s); const size_t n = s.cloud ? s.cloud->vertices.size() : 0; std::vector<uint8_t> mark(n, 0); size_t marked = 0;
+            for (size_t i = 0; i < n; i++) if (s.cloud->vertices[i].x > 20) { mark[i] = 1; marked++; }
+            ScanCut cut = cutCloudPoints(s, mark); size_t after = 0; for (const ScanFrame& f : s.frames) after += f.cells.size();
+            const size_t left = s.cloud->vertices.size(); s.cloud.reset(); buildPointCloud(s); float maxX = -1e9f; for (const V3& v : s.cloud->vertices) maxX = std::max(maxX, v.x);
+            CHECK(marked > 100 && cut.measurements == before-after && after < before && left == n-marked && maxX < 20+2*s.cloudSpacingMm, "Punktwolke bearbeiten: %zu von %zu Punkten, %zu Messungen entfernt, danach bis x=%.2f", marked, n, cut.measurements, maxX);
+            restoreCut(s, cut); size_t back = 0; for (const ScanFrame& f : s.frames) back += f.cells.size();
+            CHECK(back == before && s.cloud && s.cloud->vertices.size() == n, "Punktwolke bearbeiten: rückgängig (%zu von %zu)", back, before);
+        }
         Pose shift; shift.t = V3{0, 0, 0}; pr.scans.push_back(makeScan("Scan_1", Pose{})); pr.scans[0].placed = true; pr.scans.push_back(makeScan("Scan_2", shift));
         CHECK(pr.nextName() == "Scan_3", "Projekt: naechster Name (%s)", pr.nextName().c_str());
         Mesh merged; std::string er; MeshOptions mop; mop.minWeight = 1; mop.smoothIterations = 0; mop.fillHolesMm = 0;

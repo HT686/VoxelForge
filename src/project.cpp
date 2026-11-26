@@ -1,5 +1,8 @@
 #include "project.hpp"
 #include <random>
+#include <omp.h>
+#include <functional>
+#include <chrono>
 #include <unordered_set>
 #include "markers.hpp"
 #include "i18n.hpp"
@@ -28,6 +31,24 @@ void fillDepth(const ScanFrame& f, DepthMap& d) {
     for (size_t i = 0; i < f.cells.size(); i++) d.z[f.cells[i]] = f.z[i];
 }
 }
+void integrateFrames(Tsdf& t, const std::vector<FrameRef>& frames, float maxWeight, bool withColor, const std::function<void(size_t)>& done) {
+    const size_t batch = (size_t)std::max(1, omp_get_max_threads());
+    std::vector<DepthMap> depth(batch); std::vector<TsdfFrame> prepared(batch); std::vector<ColorImage> image(batch); std::vector<uint8_t> hasColor(batch, 0);
+    for (size_t start = 0; start < frames.size(); start += batch) {
+        const size_t n = std::min(batch, frames.size()-start);
+        #pragma omp parallel for schedule(dynamic, 1)
+        for (size_t k = 0; k < n; k++) {
+            const FrameRef& r = frames[start+k]; DepthMap& d = depth[k];
+            if (d.width != r.grid->width || d.height != r.grid->height || d.z.size() != (size_t)r.grid->width*r.grid->height) { d = *r.grid; d.z.assign((size_t)d.width*d.height, 0.f); }
+            else { d.fx = r.grid->fx; d.fy = r.grid->fy; d.cx = r.grid->cx; d.cy = r.grid->cy; }
+            fillDepth(*r.frame, d);
+            hasColor[k] = withColor && r.color && r.color->valid && !r.frame->colorJpeg.empty() && decodeJpeg(r.frame->colorJpeg, image[k]);
+            t.prepare(d, r.pose, prepared[k]);
+        }
+        for (size_t k = 0; k < n; k++) { t.integrate(prepared[k], maxWeight, hasColor[k] ? &image[k] : nullptr, frames[start+k].color); if (done) done(start+k+1); }
+    }
+}
+
 size_t carveFreeSpace(Mesh& m, const std::vector<ScanView>& scans, float tol) {
     const size_t nv = m.vertices.size(); if (!nv) return 0;
     std::vector<uint32_t> agree(nv, 0), through(nv, 0);
@@ -75,7 +96,7 @@ static constexpr int kDarkestUsable = 70;
 float colorFromFrames(Mesh& m, const std::vector<ScanView>& scans, float tol) {
     const size_t nv = m.vertices.size(); if (!nv) return 0;
     if (m.normals.size() != nv) computeNormals(m);
-    std::vector<float> sum(nv*4, 0.f); ColorImage img; std::vector<float> d; bool any = false;
+    std::vector<float> sum(nv*4, 0.f); std::vector<float> d; bool any = false;
     constexpr int kCoarse = 8, coarseW = 1280/kCoarse+1, coarseH = 800/kCoarse+1; std::vector<float> nearest((size_t)coarseW*coarseH);
     for (const ScanView& s : scans) {
         if (!s.colorCalib->valid) continue;
@@ -84,9 +105,17 @@ float colorFromFrames(Mesh& m, const std::vector<ScanView>& scans, float tol) {
         d.assign((size_t)W*H, 0.f);
         size_t withColor = 0; for (const ScanFrame& f : *s.frames) withColor += !f.colorJpeg.empty();
         const size_t step = std::max<size_t>(1, withColor/300); size_t seen = 0;
-        for (size_t fi = 0; fi < s.frames->size(); fi++) {
-            const ScanFrame& f = (*s.frames)[fi];
-            if (f.colorJpeg.empty() || (seen++ % step) || !decodeJpeg(f.colorJpeg, img)) continue;
+        std::vector<size_t> chosen; for (size_t fi = 0; fi < s.frames->size(); fi++) if (!(*s.frames)[fi].colorJpeg.empty() && !(seen++ % step)) chosen.push_back(fi);
+        // Decoding takes longer than using an image: a batch is decoded at once, then used in order.
+        const size_t batch = (size_t)std::max(1, omp_get_max_threads()); std::vector<ColorImage> images(batch); std::vector<uint8_t> decoded(batch, 0);
+        for (size_t ci = 0; ci < chosen.size(); ci++) {
+            if (ci % batch == 0) {
+                const size_t n = std::min(batch, chosen.size()-ci);
+                #pragma omp parallel for schedule(dynamic, 1)
+                for (size_t k = 0; k < n; k++) decoded[k] = decodeJpeg((*s.frames)[chosen[ci+k]].colorJpeg, images[k]);
+            }
+            if (!decoded[ci % batch]) continue;
+            const size_t fi = chosen[ci]; const ScanFrame& f = (*s.frames)[fi]; const ColorImage& img = images[ci % batch];
             for (size_t i = 0; i < f.cells.size(); i++) d[f.cells[i]] = f.z[i];
             // The color camera sits beside the depth camera, so at edges it sees past or behind what
             // the depth camera sees. What it sees first, on a coarse grid, decides.
@@ -137,10 +166,9 @@ float colorFromFrames(Mesh& m, const std::vector<ScanView>& scans, float tol) {
 namespace {
 void modelOfHalf(const std::vector<ScanView>& scans, int half, float voxelMm, Mesh& out) {
     Tsdf t(voxelMm);
-    for (const ScanView& s : scans) {
-        DepthMap d = *s.grid; d.z.assign((size_t)d.width*d.height, 0.f);
-        for (size_t i = (size_t)half; i < s.frames->size(); i += 2) { fillDepth((*s.frames)[i], d); t.integrate(d, s.frameToProject(i), 64); }
-    }
+    std::vector<FrameRef> refs;
+    for (const ScanView& s : scans) for (size_t i = (size_t)half; i < s.frames->size(); i += 2) refs.push_back({&(*s.frames)[i], s.frameToProject(i), s.grid, nullptr});
+    integrateFrames(t, refs, 64, false);
     MeshOptions o; o.minWeight = 2; o.smoothIterations = 1; o.fillHolesMm = 0; o.keepTriangles = 1; o.removeFragments = false;
     extractMesh(t, o, out); computeNormals(out);
 }
@@ -154,7 +182,9 @@ float polishPoses(std::vector<ScanView>& scans, std::vector<std::vector<Pose>>& 
     }
     float moved = 0;
     for (int round = 0; round < rounds; round++) {
+        const auto t0 = std::chrono::steady_clock::now();
         Mesh model[2]; modelOfHalf(scans, 1, voxelMm, model[0]); modelOfHalf(scans, 0, voxelMm, model[1]);
+        const auto t1 = std::chrono::steady_clock::now();
         double sum = 0; size_t count = 0; const float reach = 1.5f, inlier = 1.2f;
         for (int half = 0; half < 2; half++) {
             if (model[half].vertices.empty()) continue;
@@ -188,6 +218,7 @@ float polishPoses(std::vector<ScanView>& scans, std::vector<std::vector<Pose>>& 
             }
         }
         moved = count ? (float)(sum/count) : 0;
+        if (getenv("VF_ZEIT")) fprintf(stderr, "  Runde %d: Modelle %.2f s, Anpassung %.2f s\n", round, std::chrono::duration<double>(t1-t0).count(), std::chrono::duration<double>(std::chrono::steady_clock::now()-t1).count());
     }
     return moved;
 }
@@ -319,6 +350,58 @@ bool removeSupport(ScanData& scan) {
     scan.support = {true, bn, bh}; scan.up = bn; scan.overview.reset(); scan.cloud.reset();
     return true;
 }
+namespace {
+// The small cube of the point cloud a point falls into, as buildPointCloud counts them.
+int64_t cubeKey(int64_t kx, int64_t ky, int64_t kz) { return ((kx+(1<<20))<<42)|((ky+(1<<20))<<21)|(kz+(1<<20)); }
+}
+ScanCut cutCloudPoints(ScanData& scan, const std::vector<uint8_t>& removed) {
+    ScanCut cut; if (!scan.cloud || removed.size() != scan.cloud->vertices.size()) return cut;
+    const Mesh& c = *scan.cloud; const float cube = scan.cloudSpacingMm;
+    std::unordered_set<int64_t> gone, kept; V3 lo{1e30f, 1e30f, 1e30f}, hi{-1e30f, -1e30f, -1e30f};
+    for (size_t i = 0; i < c.vertices.size(); i++) {
+        const V3 p = c.vertices[i]; const int64_t key = cubeKey((int64_t)std::floor(p.x/cube), (int64_t)std::floor(p.y/cube), (int64_t)std::floor(p.z/cube));
+        if (removed[i]) { gone.insert(key); lo = {std::min(lo.x, p.x), std::min(lo.y, p.y), std::min(lo.z, p.z)}; hi = {std::max(hi.x, p.x), std::max(hi.y, p.y), std::max(hi.z, p.z)}; }
+        else kept.insert(key);
+    }
+    if (gone.empty()) return cut;
+    lo = lo-V3{2*cube, 2*cube, 2*cube}; hi = hi+V3{2*cube, 2*cube, 2*cube};
+    auto drop = [&](V3 w) {
+        if (w.x < lo.x || w.y < lo.y || w.z < lo.z || w.x > hi.x || w.y > hi.y || w.z > hi.z) return false;
+        const int64_t kx = (int64_t)std::floor(w.x/cube), ky = (int64_t)std::floor(w.y/cube), kz = (int64_t)std::floor(w.z/cube), key = cubeKey(kx, ky, kz);
+        if (gone.count(key)) return true;
+        if (kept.count(key)) return false;
+        for (int dz = -1; dz <= 1; dz++) for (int dy = -1; dy <= 1; dy++) for (int dx = -1; dx <= 1; dx++) if (gone.count(cubeKey(kx+dx, ky+dy, kz+dz))) return true;
+        return false;
+    };
+    const DepthMap& gr = scan.grid; const int W = gr.width;
+    cut.cells.resize(scan.frames.size()); cut.z.resize(scan.frames.size()); size_t total = 0;
+    #pragma omp parallel for schedule(dynamic, 8) reduction(+:total)
+    for (size_t fi = 0; fi < scan.frames.size(); fi++) {
+        ScanFrame& f = scan.frames[fi]; size_t k = 0;
+        for (size_t i = 0; i < f.cells.size(); i++) {
+            const int x = (int)(f.cells[i]%W), y = (int)(f.cells[i]/W); const float z = f.z[i];
+            if (drop(f.pose.apply(V3{(x-gr.cx)/gr.fx*z, (y-gr.cy)/gr.fy*z, z}))) { cut.cells[fi].push_back(f.cells[i]); cut.z[fi].push_back(z); continue; }
+            f.cells[k] = f.cells[i]; f.z[k] = z; k++;
+        }
+        total += f.cells.size()-k; f.cells.resize(k); f.z.resize(k);
+    }
+    cut.measurements = total;
+    // The cloud loses the marked points right away. Rebuilding it would take seconds and change nothing else.
+    cut.cloud = scan.cloud; auto m = std::make_shared<Mesh>();
+    const bool colors = c.colors.size() == c.vertices.size()*3, normals = c.normals.size() == c.vertices.size();
+    for (size_t i = 0; i < c.vertices.size(); i++) if (!removed[i]) {
+        m->vertices.push_back(c.vertices[i]); if (normals) m->normals.push_back(c.normals[i]);
+        if (colors) m->colors.insert(m->colors.end(), c.colors.begin()+3*i, c.colors.begin()+3*i+3);
+    }
+    scan.cloud = m; scan.overview.reset();
+    return cut;
+}
+void restoreCut(ScanData& scan, ScanCut& cut) {
+    for (size_t fi = 0; fi < scan.frames.size() && fi < cut.cells.size(); fi++) {
+        ScanFrame& f = scan.frames[fi]; f.cells.insert(f.cells.end(), cut.cells[fi].begin(), cut.cells[fi].end()); f.z.insert(f.z.end(), cut.z[fi].begin(), cut.z[fi].end());
+    }
+    scan.cloud = cut.cloud; scan.overview.reset(); cut = ScanCut{};
+}
 Table placedTable(const Table& t, const Pose& P) {
     if (!t.known) return t;
     Table o = t; o.up = P.rot(t.up); o.height = t.height+dot(o.up, P.t); return o;
@@ -329,9 +412,9 @@ void buildOverview(ScanData& scan) {
     std::vector<float> zs; for (size_t i = 0; i < scan.frames.size(); i += std::max<size_t>(1, scan.frames.size()/32)) { const ScanFrame& f = scan.frames[i]; if (!f.z.empty()) zs.push_back(f.z[f.z.size()/2]); }
     float dist = 300; if (!zs.empty()) { std::nth_element(zs.begin(), zs.begin()+zs.size()/2, zs.end()); dist = zs[zs.size()/2]; }
     Tsdf t(std::clamp(dist/500.f, 0.5f, 2.5f));
-    DepthMap d = scan.grid; d.z.assign((size_t)d.width*d.height, 0.f);
     const size_t step = std::max<size_t>(1, scan.frames.size()/400);
-    for (size_t i = 0; i < scan.frames.size(); i += step) { fillDepth(scan.frames[i], d); t.integrate(d, scan.frames[i].pose, 64); }
+    std::vector<FrameRef> refs; for (size_t i = 0; i < scan.frames.size(); i += step) refs.push_back({&scan.frames[i], scan.frames[i].pose, &scan.grid, nullptr});
+    integrateFrames(t, refs, 64, false);
     auto m = std::make_shared<Mesh>(); MeshOptions o; o.minWeight = 1; o.smoothIterations = 2; o.fillHolesMm = 0; o.keepTriangles = 1;
     extractMesh(t, o, *m);
     // Stray pieces would count as contradictions when this scan is aligned.
@@ -351,27 +434,24 @@ bool fuseProject(const Project& p, float voxelMm, const MeshOptions& options, Me
     }
     if (!total) { error = tr("Kein Scan ausgewählt."); return false; }
     std::vector<ScanView> views; for (const ScanData& s : p.scans) if (s.included) views.push_back({&s.frames, &s.grid, &s.colorCalib, s.placement});
-    std::vector<std::vector<Pose>> polished;
+    std::vector<std::vector<Pose>> polished; auto T0 = std::chrono::steady_clock::now();
+    auto lap = [&](const char* what) { if (getenv("VF_ZEIT")) { const auto n = std::chrono::steady_clock::now(); fprintf(stderr, "%-18s %6.2f s\n", what, std::chrono::duration<double>(n-T0).count()); T0 = n; } };
     if (options.cleanUp) { if (progress) progress(0.02f); polishPoses(views, polished, std::max(voxelMm, 0.5f)); }
-    Tsdf t(voxelMm); ColorImage img;
-    for (const ScanView& s : views) {
-        DepthMap d = *s.grid; d.z.assign((size_t)d.width*d.height, 0.f);
-        for (size_t i = 0; i < s.frames->size(); i++) {
-            const ScanFrame& f = (*s.frames)[i];
-            fillDepth(f, d);
-            const bool col = s.colorCalib->valid && !f.colorJpeg.empty() && decodeJpeg(f.colorJpeg, img);
-            t.integrate(d, s.frameToProject(i), kFinalMaxWeight, col ? &img : nullptr, s.colorCalib);
-            if (progress && ++done % 16 == 0) progress(0.2f+0.7f*done/total);
-        }
-    }
+    lap("Feinausrichtung");
+    Tsdf t(voxelMm);
+    std::vector<FrameRef> refs; for (const ScanView& s : views) for (size_t i = 0; i < s.frames->size(); i++) refs.push_back({&(*s.frames)[i], s.frameToProject(i), s.grid, s.colorCalib});
+    integrateFrames(t, refs, kFinalMaxWeight, true, [&](size_t done) { if (progress && done % 16 == 0) progress(0.2f+0.7f*done/total); });
+    lap("Fusion");
     MeshOptions o = options; o.upright = false;
     o.removeFragments = false;   // only after the clean-up below
-    extractMesh(t, o, out);
+    extractMesh(t, o, out); lap("Netz");
     if (out.indices.empty()) { error = tr("Die Fusion ergibt kein Netz."); return false; }
     const float tol = std::max(2.f, voxelMm*2);
     if (options.cleanUp) carveFreeSpace(out, views, tol);
     if (options.removeFragments) removeSmallParts(out, options.minFragmentShare);
+    lap("Bereinigen");
     if (options.cleanUp) { computeNormals(out); colorFromFrames(out, views, tol); }
+    lap("Farbe");
     if (out.indices.empty()) { error = tr("Die Fusion ergibt kein Netz."); return false; }
     if (options.upright) { orientUpright(out, first->placement.rot(first->up)); computeNormals(out); }
     return true;

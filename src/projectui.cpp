@@ -23,6 +23,12 @@ void appendMesh(Mesh& into, const Mesh& m, const Pose& P, const float* col) {
     for (const V3& v : m.vertices) { into.vertices.push_back(P.apply(v)); for (int c = 0; c < 3; c++) into.colors.push_back((uint8_t)(col[c]*170)); }
     for (uint32_t i : m.indices) into.indices.push_back(i+off);
 }
+bool insidePolygon(float x, float y, const std::vector<ImVec2>& poly) {
+    bool in = false;
+    for (size_t i = 0, j = poly.size()-1; i < poly.size(); j = i++)
+        if ((poly[i].y > y) != (poly[j].y > y) && x < (poly[j].x-poly[i].x)*(y-poly[i].y)/(poly[j].y-poly[i].y)+poly[i].x) in = !in;
+    return in;
+}
 }
 
 ProjectUi::ProjectUi(Pipeline& pipe, EditUi& edit) : pipe_(pipe), edit_(edit) {}
@@ -58,6 +64,7 @@ std::string ProjectUi::describe() const {
     std::string s = "Scans=" + std::to_string(project_.scans.size());
     for (const ScanData& d : project_.scans) s += " " + d.name + ":" + std::to_string(d.frames.size()) + (d.placed ? ":platziert" : ":offen");
     s += " Ansicht=" + (reviewing() ? project_.scans[reviewScan_].name : std::string("live")) + " Ausrichten=" + std::to_string(aligning_) + " Ergebnis=" + std::to_string(hasResult_);
+    if (reviewing() && project_.scans[reviewScan_].cloud) s += " Wolke=" + std::to_string(project_.scans[reviewScan_].cloud->vertices.size()) + " markiert=" + std::to_string(cloudMarkedCount_) + " Schnitte=" + std::to_string(cuts_.size());
     for (auto& e : proposals_) if (!e.second.options.empty()) {
         const RegisterResult& r = e.second.options[e.second.current]; char b[120];
         snprintf(b, sizeof b, " [%s: %zu Vorschläge, %.0f%%, Rest %.3f, %s]", project_.scans[e.first].name.c_str(), e.second.options.size(), 100*r.overlap, r.rmsMm, r.confident ? "sicher" : "unsicher"); s += b;
@@ -81,7 +88,7 @@ void ProjectUi::panel(bool canAct, int liveFrames, bool canStartTools, bool hasL
             ImGui::SetNextItemAllowOverlap(); ImGui::BeginDisabled(!free);
             if (ImGui::InvisibleButton("##row", {w-px(70), h})) showReview((int)i);
             const bool rowHover = ImGui::IsItemHovered(); { char note[160]; snprintf(note, sizeof note, "Zeile %s", s.name.c_str()); forge::noteItem(note); } ImGui::EndDisabled();
-            if (rowHover) ImGui::SetTooltip("%s", tr("Punktwolke dieses Scans ansehen. Rechte Maustaste: weitere Befehle"));
+            if (rowHover) ImGui::SetTooltip("%s", tr("Punktwolke dieses Scans ansehen und bearbeiten. Rechte Maustaste: weitere Befehle"));
             if (free && ImGui::IsItemClicked(ImGuiMouseButton_Right)) { menuIndex_ = (int)i; ImGui::OpenPopup("##scanmenu"); }
             ImDrawList* dl = ImGui::GetWindowDrawList(); dl->AddRectFilled(at, {at.x+w, at.y+h}, forge::col(rowHover ? forge::raised : forge::bg), px(9));
             if (reviewScan_ == (int)i) dl->AddRect(at, {at.x+w, at.y+h}, forge::col(forge::sky), px(9), 0, px(1.5f));
@@ -137,35 +144,121 @@ void ProjectUi::showReview(int scan) { reviewScan_ = scan; reviewDirty_ = true; 
 // The picture is prepared in the background, unless another job has to finish first.
 void ProjectUi::updateReview() {
     if (!reviewDirty_ || jobRunning_ || aligning_) return;
-    reviewDirty_ = false;
+    reviewDirty_ = false; clearCloudMarks(); cloudLasso_.clear(); cloudDragging_ = false;
     if (reviewScan_ < 0 || reviewScan_ >= (int)project_.scans.size()) { reviewScan_ = -1; return; }
     ScanData* s = &project_.scans[reviewScan_]; const int shown = reviewScan_;
-    auto upload = [this, shown] {
-        if (shown != reviewScan_ || shown >= (int)project_.scans.size()) return;
-        const ScanData& d = project_.scans[shown]; if (!d.cloud) return;
-        reviewView_.setUpDirection(d.up); reviewView_.setPointCloud(*d.cloud, true, d.cloudSpacingMm);
-    };
-    if (s->cloud) upload();
-    else startJob(tr("Punktwolke wird vorbereitet"), [this, s] { if (removeSupport(*s)) { std::lock_guard<std::mutex> g(labelMutex_); supportCut_ = s->name; } buildPointCloud(*s); }, [this, upload] { reportSupports(); upload(); });
+    if (s->cloud) uploadReview(true);
+    else startJob(tr("Punktwolke wird vorbereitet"), [this, s] { if (removeSupport(*s)) { std::lock_guard<std::mutex> g(labelMutex_); supportCut_ = s->name; } buildPointCloud(*s); }, [this, shown] { reportSupports(); if (shown == reviewScan_) uploadReview(true); });
+}
+void ProjectUi::uploadReview(bool resetCamera) {
+    if (reviewScan_ < 0 || reviewScan_ >= (int)project_.scans.size()) return;
+    const ScanData& d = project_.scans[reviewScan_]; if (!d.cloud) return;
+    reviewView_.setUpDirection(d.up); reviewView_.setPointCloud(*d.cloud, resetCamera, d.cloudSpacingMm);
+    clearCloudMarks();
 }
 void ProjectUi::reviewView() {
     const ImVec2 o = ImGui::GetCursorScreenPos(), r{ImGui::GetContentRegionAvail().x-px(10), ImGui::GetContentRegionAvail().y-px(10)};
     char title[120] = ""; if (reviewScan_ < (int)project_.scans.size() && reviewScan_ >= 0) { const ScanData& s = project_.scans[reviewScan_]; snprintf(title, sizeof title, tr("%s  ·  %zu Bilder"), s.name.c_str(), s.frames.size()); }
-    oneView(reviewView_, r, title, nullptr, nullptr);
-    const float barW = px(220), barH = px(60); forge::beginFloating("##reviewbar", {o.x+(r.x-barW)/2, o.y+r.y-barH-px(16)}, {barW, barH});
-    ImGui::SetCursorPos({px(7), px(7)}); ImGui::BeginDisabled(jobRunning_);
-    if (forge::primaryButton(IC_PLUS "  Neuer Scan##r", {barW-px(14), barH-px(14)})) newScan(false);
-    forge::noteItem("Neuer Scan");
-    ImGui::EndDisabled(); forge::endFloating();
+    const bool selecting = cloudSelect_ != CloudSelect::None && !ImGui::GetIO().KeyShift;
+    oneView(reviewView_, r, title, nullptr, nullptr, !selecting && !cloudDragging_);
+    cloudInput(o, ImGui::IsItemHovered());
+    if (cloudMarkedCount_) { char b[96]; snprintf(b, sizeof b, tr("%zu Punkte ausgewählt"), cloudMarkedCount_); forge::chipAt(ImGui::GetWindowDrawList(), {o.x+px(12), o.y+px(46)}, b, forge::danger); }
+    else if (cloudSelect_ != CloudSelect::None) forge::chipAt(ImGui::GetWindowDrawList(), {o.x+px(12), o.y+px(46)}, tr("Ziehen wählt aus, Strg wählt ab, Umschalt dreht"), forge::textDim);
+    cloudBar(o, r);
     if (jobRunning_) forge::busyOverlay(o, r, busyLabel().c_str(), busyProgress());
 }
+void ProjectUi::clearCloudMarks() { cloudMarked_.clear(); cloudMarkedCount_ = 0; reviewView_.setFlags({}); }
+void ProjectUi::cloudInput(ImVec2 o, bool hovered) {
+    const ImGuiIO& io = ImGui::GetIO(); ImDrawList* dl = ImGui::GetWindowDrawList();
+    if (!jobRunning_ && !io.WantTextInput && reviewing()) {
+        if (ImGui::IsKeyPressed(ImGuiKey_Escape, false)) { if (cloudDragging_) { cloudDragging_ = false; cloudLasso_.clear(); } else if (cloudMarkedCount_) clearCloudMarks(); else cloudSelect_ = CloudSelect::None; }
+        if (ImGui::IsKeyPressed(ImGuiKey_Delete, false)) deleteCloudMarked();
+        if (io.KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_Z, false)) undoCloudCut();
+    }
+    if (hovered && !jobRunning_ && cloudSelect_ != CloudSelect::None && !io.KeyShift && ImGui::IsMouseClicked(ImGuiMouseButton_Left)) { cloudDragging_ = true; cloudDragStart_ = io.MousePos; cloudLasso_.assign(1, io.MousePos); }
+    if (!cloudDragging_) return;
+    if (cloudSelect_ == CloudSelect::Lasso) { const ImVec2 l = cloudLasso_.back(), m = io.MousePos; if ((l.x-m.x)*(l.x-m.x)+(l.y-m.y)*(l.y-m.y) > 9) cloudLasso_.push_back(m); }
+    if (cloudSelect_ == CloudSelect::Box) { dl->AddRectFilled(cloudDragStart_, io.MousePos, forge::col(forge::sky, .15f)); dl->AddRect(cloudDragStart_, io.MousePos, forge::col(forge::sky)); }
+    else if (cloudLasso_.size() > 1) dl->AddPolyline(cloudLasso_.data(), (int)cloudLasso_.size(), forge::col(forge::sky), ImDrawFlags_Closed, 1.5f);
+    if (ImGui::IsMouseReleased(ImGuiMouseButton_Left)) { cloudDragging_ = false; finishCloudSelect(o, io.KeyCtrl); cloudLasso_.clear(); }
+}
+void ProjectUi::finishCloudSelect(ImVec2 o, bool remove) {
+    if (reviewScan_ < 0 || reviewScan_ >= (int)project_.scans.size() || !project_.scans[reviewScan_].cloud) return;
+    std::vector<ImVec2> poly;
+    if (cloudSelect_ == CloudSelect::Box) { const ImVec2 a = cloudDragStart_, b = ImGui::GetMousePos(); poly = {{a.x-o.x, a.y-o.y}, {b.x-o.x, a.y-o.y}, {b.x-o.x, b.y-o.y}, {a.x-o.x, b.y-o.y}}; }
+    else for (const ImVec2& p : cloudLasso_) poly.push_back({p.x-o.x, p.y-o.y});
+    if (poly.size() < 3) return;
+    float x0 = 1e9f, x1 = -1e9f, y0 = 1e9f, y1 = -1e9f; for (const ImVec2& p : poly) { x0 = std::min(x0, p.x); x1 = std::max(x1, p.x); y0 = std::min(y0, p.y); y1 = std::max(y1, p.y); }
+    const Mesh& c = *project_.scans[reviewScan_].cloud; const bool see = !cloudPenetrate_; if (see) reviewView_.prepareDepth();
+    // Points are drawn as small squares: what lies within a few of them behind the front counts as seen. A rough or
+    // furry surface gives a layer of points several mm thick: deeper points count as well while they face the viewer,
+    // so that the back of a thin wall stays.
+    const float spacing = project_.scans[reviewScan_].cloudSpacingMm, tol = std::max(reviewView_.radius()*0.008f, 3*spacing), deep = std::max(reviewView_.radius()*0.05f, 12*spacing);
+    const bool normals = c.normals.size() == c.vertices.size(); V3 eye, dir; reviewView_.ray((x0+x1)/2, (y0+y1)/2, eye, dir);
+    cloudMarked_.resize(c.vertices.size(), 0);
+    #pragma omp parallel for schedule(dynamic, 16384)
+    for (size_t i = 0; i < c.vertices.size(); i++) {
+        float x, y, d; if (!reviewView_.project(c.vertices[i], x, y, d)) continue;
+        if (x < x0 || x > x1 || y < y0 || y > y1 || !insidePolygon(x, y, poly)) continue;
+        if (see && !reviewView_.isVisible(x, y, d, tol) && !(normals && dot(c.normals[i], c.vertices[i]-eye) < 0 && reviewView_.isVisible(x, y, d, deep))) continue;
+        cloudMarked_[i] = !remove;
+    }
+    cloudMarkedCount_ = 0; for (uint8_t m : cloudMarked_) cloudMarkedCount_ += m;
+    if (cloudMarkedCount_) reviewView_.setFlags(cloudMarked_); else reviewView_.setFlags({});
+}
+void ProjectUi::deleteCloudMarked() {
+    if (!cloudMarkedCount_ || jobRunning_ || reviewScan_ < 0 || reviewScan_ >= (int)project_.scans.size()) return;
+    const int scan = reviewScan_; auto marked = std::make_shared<std::vector<uint8_t>>(std::move(cloudMarked_)); clearCloudMarks();
+    auto step = std::make_shared<CutStep>(); step->scan = scan;
+    startJob(tr("Punkte werden aus dem Scan entfernt"), [this, scan, marked, step] { step->cut = cutCloudPoints(project_.scans[scan], *marked); }, [this, scan, step] {
+        if (!step->cut.measurements && !step->cut.cloud) return;
+        cuts_.push_back(std::move(*step)); if (cuts_.size() > 20) cuts_.erase(cuts_.begin());
+        dirty_ = true; if (scan == reviewScan_) uploadReview(false);
+        say(trf("Aus %s entfernt. Ausrichtung und Fusion verwenden diese Stellen nicht mehr.", project_.scans[scan].name), true);
+    });
+}
+void ProjectUi::undoCloudCut() {
+    if (cuts_.empty() || jobRunning_) return;
+    CutStep& s = cuts_.back(); if (s.scan < 0 || s.scan >= (int)project_.scans.size()) { cuts_.pop_back(); return; }
+    restoreCut(project_.scans[s.scan], s.cut); const int scan = s.scan; cuts_.pop_back(); dirty_ = true;
+    if (scan != reviewScan_) showReview(scan); else uploadReview(false);
+}
+void ProjectUi::cloudBar(ImVec2 o, ImVec2 r) {
+    const float b = px(36), gap = px(3), sep = px(13), newW = px(150), barH = b+px(12);
+    const float barW = 6*b+4*gap+3*sep+newW+px(12)+px(2);
+    forge::beginFloating("##reviewbar", {o.x+(r.x-barW)/2, o.y+r.y-barH-px(16)}, {barW, barH});
+    ImGui::SetCursorPos({px(6), px(6)});
+    auto separator = [&] { ImGui::SameLine(0, sep/2); const ImVec2 c = ImGui::GetCursorScreenPos(); ImGui::GetWindowDrawList()->AddLine({c.x, c.y+px(8)}, {c.x, c.y+b-px(8)}, forge::col(forge::lineStrong)); ImGui::Dummy({0, 0}); ImGui::SameLine(0, sep/2); };
+    const bool hasCloud = reviewScan_ >= 0 && reviewScan_ < (int)project_.scans.size() && project_.scans[reviewScan_].cloud;
+    ImGui::BeginDisabled(jobRunning_ || !hasCloud);
+    auto mode = [&](const char* icon, const char* key, CloudSelect m, const char* tip) { if (forge::iconButton(icon, key, tip, cloudSelect_ == m)) cloudSelect_ = cloudSelect_ == m ? CloudSelect::None : m; ImGui::SameLine(); };
+    mode(IC_LASSO, tr("Lasso"), CloudSelect::Lasso, tr("Lasso: Punkte frei umfahren, Strg wählt ab"));
+    mode(IC_SQUARE_DASHED, tr("Rechteck"), CloudSelect::Box, tr("Rechteck aufziehen, Strg wählt ab"));
+    if (forge::iconButton(IC_LAYERS, tr("Durchdringen"), tr("Durchdringen: wählt auch verdeckte Punkte"), cloudPenetrate_)) cloudPenetrate_ = !cloudPenetrate_;
+    separator();
+    ImGui::BeginDisabled(!cloudMarkedCount_);
+    if (forge::iconButton(IC_CIRCLE_X, tr("Aufheben"), tr("Auswahl aufheben"))) clearCloudMarks();
+    ImGui::SameLine();
+    if (forge::iconButton(IC_TRASH_2, tr("Löschen"), tr("Ausgewählte Punkte aus dem Scan entfernen (Entf)"))) deleteCloudMarked();
+    ImGui::EndDisabled();
+    separator();
+    ImGui::BeginDisabled(cuts_.empty());
+    if (forge::iconButton(IC_UNDO_2, tr("Rückgängig"), tr("Rückgängig (Strg+Z)"))) undoCloudCut();
+    ImGui::EndDisabled();
+    ImGui::EndDisabled();
+    separator();
+    ImGui::BeginDisabled(jobRunning_);
+    if (forge::primaryButton(IC_PLUS "  Neuer Scan##r", {newW, b})) newScan(false);
+    forge::noteItem("Neuer Scan");
+    ImGui::EndDisabled(); forge::endFloating();
+}
 std::string ProjectUi::projectName() const { return std::filesystem::path(path_).stem().string(); }
-void ProjectUi::closeProject() { project_ = Project{}; path_[0] = 0; dirty_ = false; reviewScan_ = -1; reviewDirty_ = false; closeAlign(); }
+void ProjectUi::closeProject() { project_ = Project{}; path_[0] = 0; dirty_ = false; reviewScan_ = -1; reviewDirty_ = false; cuts_.clear(); closeAlign(); }
 bool ProjectUi::createProject(const std::string& file, std::string& error) {
     std::error_code ec; std::filesystem::create_directories(std::filesystem::path(file).parent_path(), ec);
     if (ec) { error = tr("Der Ordner lässt sich nicht anlegen: ")+ec.message(); return false; }
     Project empty; if (!saveProject(empty, file, error)) return false;
-    project_ = Project{}; dirty_ = false; reviewScan_ = -1; reviewDirty_ = false; closeAlign(); snprintf(path_, sizeof path_, "%s", file.c_str());
+    project_ = Project{}; dirty_ = false; reviewScan_ = -1; reviewDirty_ = false; cuts_.clear(); closeAlign(); snprintf(path_, sizeof path_, "%s", file.c_str());
     if (onFileChanged) onFileChanged(file);
     return true;
 }
@@ -192,7 +285,7 @@ void ProjectUi::saveTo(const std::string& file) {
 bool ProjectUi::loadFile(const std::string& path) {
     auto loaded = std::make_shared<Project>(); auto error = std::make_shared<std::string>(); auto ok = std::make_shared<bool>(false);
     startJob(tr("Projekt wird geladen"), [path, loaded, error, ok] { *ok = loadProject(*loaded, path, *error); }, [this, path, loaded, error, ok] {
-        if (*ok) { project_ = std::move(*loaded); dirty_ = false; closeAlign(); reviewLast(); snprintf(path_, sizeof path_, "%s", path.c_str()); say(tr("Geöffnet: ")+std::filesystem::path(path).stem().string(), true); if (onFileChanged) onFileChanged(path); }
+        if (*ok) { project_ = std::move(*loaded); dirty_ = false; cuts_.clear(); closeAlign(); reviewLast(); snprintf(path_, sizeof path_, "%s", path.c_str()); say(tr("Geöffnet: ")+std::filesystem::path(path).stem().string(), true); if (onFileChanged) onFileChanged(path); }
         else say(*error, false);
     });
     return true;
@@ -243,7 +336,7 @@ void ProjectUi::removeDialog() {
 }
 void ProjectUi::removeScan(size_t i) {
     if (i >= project_.scans.size()) return;
-    project_.scans.erase(project_.scans.begin()+i); dirty_ = true; if (reviewScan_ >= 0) reviewLast();
+    project_.scans.erase(project_.scans.begin()+i); dirty_ = true; cuts_.clear(); if (reviewScan_ >= 0) reviewLast();
     bool anyPlaced = false; for (const ScanData& s : project_.scans) anyPlaced |= s.placed;
     if (!anyPlaced && !project_.scans.empty()) { project_.scans[0].placed = true; project_.scans[0].placement = Pose{}; }
 }
@@ -604,7 +697,7 @@ void ProjectUi::pickView(MeshView& view, int side, ImVec2 size) {
     const std::string title = trf(side == 0 ? "%s bleibt liegen" : "%s wird bewegt", scan.name);
     forge::chipAt(dl, {o.x+px(12), o.y+px(12)}, title.c_str(), side == 0 ? ImVec4(kScanColors[0][0], kScanColors[0][1], kScanColors[0][2], 1) : ImVec4(kScanColors[1][0], kScanColors[1][1], kScanColors[1][2], 1));
 }
-void ProjectUi::oneView(MeshView& view, ImVec2 size, const char* title, const Mesh* pickMesh, std::vector<V3>* points) {
+void ProjectUi::oneView(MeshView& view, ImVec2 size, const char* title, const Mesh* pickMesh, std::vector<V3>* points, bool leftTurns) {
     const ImGuiIO& io = ImGui::GetIO(); const ImVec2 o = ImGui::GetCursorScreenPos(); ImDrawList* dl = ImGui::GetWindowDrawList();
     const int w = std::max(16, (int)size.x), h = std::max(16, (int)size.y);
     const GLuint tex = view.render(w, h);
@@ -612,7 +705,7 @@ void ProjectUi::oneView(MeshView& view, ImVec2 size, const char* title, const Me
     dl->AddImageRounded((ImTextureID)(intptr_t)tex, o, {o.x+w, o.y+h}, {0, 1}, {1, 0}, IM_COL32_WHITE, px(14));
     const bool hoveredOnly = ImGui::IsItemHovered(), hovered = hoveredOnly || ImGui::IsItemActive();
     if (hovered) {
-        if (ImGui::IsMouseDown(ImGuiMouseButton_Middle) || ImGui::IsMouseDown(ImGuiMouseButton_Left)) view.rotate(io.MouseDelta.x, io.MouseDelta.y);
+        if (ImGui::IsMouseDown(ImGuiMouseButton_Middle) || (leftTurns && ImGui::IsMouseDown(ImGuiMouseButton_Left))) view.rotate(io.MouseDelta.x, io.MouseDelta.y);
         if (ImGui::IsMouseDown(ImGuiMouseButton_Right)) view.pan(io.MouseDelta.x, io.MouseDelta.y);
         if (hoveredOnly && io.MouseWheel != 0) view.zoom(io.MouseWheel);
     }

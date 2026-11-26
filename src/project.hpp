@@ -40,6 +40,13 @@ struct Project {
     std::string nextName() const;
 };
 
+class Tsdf;
+// One frame to fuse: its measurements, where it goes, and the camera it was taken with (color may be null).
+struct FrameRef { const ScanFrame* frame; Pose pose; const DepthMap* grid; const ColorCalib* color; };
+// Fuses the frames in their order. Unpacking depth, decoding color and weighing the pixels need nothing from the volume,
+// so a batch of frames is prepared at once and then added one after the other. The result is the same as one by one.
+// done gets the number of frames added so far.
+void integrateFrames(Tsdf& t, const std::vector<FrameRef>& frames, float maxWeight, bool withColor, const std::function<void(size_t)>& done = {});
 // One scan as seen by the clean-up steps below.
 // poses: from the frame into the project, one per frame. Empty: placement and frame pose.
 struct ScanView {
@@ -69,6 +76,19 @@ Table scanTable(const ScanData& scan);
 // with the object on one side and the cameras on the same side, and cuts it out of the frames, so that overview,
 // point cloud and fusion no longer see it. Changes the scan; true if something was cut. Needs nothing prepared.
 bool removeSupport(ScanData& scan);
+// What was cut out of a scan's frames, kept so that the cut can be undone.
+struct ScanCut {
+    std::vector<std::vector<uint32_t>> cells; std::vector<std::vector<float>> z;   // per frame
+    size_t measurements = 0;
+    std::shared_ptr<Mesh> cloud;   // the point cloud before the cut
+};
+// Editing the point cloud before fusion: removes the marked points of scan.cloud (one flag per vertex) from every
+// frame, so that overview, alignment and fusion no longer see them. A measurement goes if it falls into the small
+// cube of a removed point, or into an empty cube next to one, where single stray measurements lie. The cloud loses
+// the marked points directly, the overview is rebuilt when needed.
+ScanCut cutCloudPoints(ScanData& scan, const std::vector<uint8_t>& removed);
+// Puts the measurements back and the earlier cloud.
+void restoreCut(ScanData& scan, ScanCut& cut);
 // The same table seen from the project, after the scan's placement.
 Table placedTable(const Table& t, const Pose& placement);
 // Quick model of one scan in its own coordinates.

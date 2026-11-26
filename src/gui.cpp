@@ -537,7 +537,8 @@ int main() {
                 forge::chipAt(dl, hud, b, fewMarkers ? forge::amber : forge::textDim, IC_TARGET); hud.y += line;
                 if (st.baseFound) { forge::chipAt(dl, hud, tr("Unterlage erkannt"), forge::textDim, IC_LAYERS); hud.y += line; }
                 if (scanning && st.shapeWeak && st.state == TrackState::Good) { forge::chipAt(dl, hud, tr("Wenig Form im Bild: Die Lage kann verrutschen. Mehr vom Objekt ins Bild nehmen oder Marker verwenden."), forge::amber, IC_TRIANGLE_ALERT); hud.y += line; }
-                if (scanning && st.turnDegPerFrame > 6.f) { forge::chipAt(dl, hud, tr("Langsamer drehen"), forge::amber, IC_TRIANGLE_ALERT); hud.y += line; }
+                // Scans that tracked well stayed below 2.6 degrees and 3.6 mm per frame, smoothed; a hand scan was lost after 9.5 mm (FINDINGS).
+                if (scanning && (st.turnDegPerFrame > 3.f || st.moveMmPerFrame > 4.5f)) { forge::chipAt(dl, hud, turntableUi ? tr("Langsamer drehen") : tr("Langsamer bewegen"), forge::amber, IC_TRIANGLE_ALERT); hud.y += line; }
                 if (fewMarkers && turntableUi && st.medianDepth > 0) { forge::chipAt(dl, hud, tr("Teller ganz ins Bild rücken, mindestens 5 Marker"), forge::amber, IC_INFO); hud.y += line; }
             }
             // Main action and distance, floating at the bottom.

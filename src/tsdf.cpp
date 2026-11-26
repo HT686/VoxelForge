@@ -42,13 +42,12 @@ Block* Tsdf::obtain(int bx, int by, int bz) {
     return &b;
 }
 
-void Tsdf::computePixelWeights(const DepthMap& d, int x0, int y0, int x1, int y1) {
+void Tsdf::computePixelWeights(const DepthMap& d, TsdfFrame& f) const {
     // All of this happens only inside [x0, x1) x [y0, y1], the rectangle around the depth with some margin. Outside
     // there is no depth, so nothing changes. The object often covers a few percent of the picture.
-    const int w = d.width; constexpr float kFar = 1e6f; constexpr int kFeatherCells = 10;
-    const int rw = x1-x0, rh = y1-y0, r1 = rw+1;
-    dist_.resize((size_t)rw*rh); integral_.resize((size_t)r1*(rh+1)); std::fill(integral_.begin(), integral_.begin()+r1, 0);
-    std::vector<int>& I = integral_; std::vector<float>& dist = dist_;
+    const int w = d.width, x0 = f.x0, y0 = f.y0; constexpr float kFar = 1e6f; constexpr int kFeatherCells = 10;
+    const int rw = f.x1-f.x0, rh = f.y1-f.y0, r1 = rw+1;
+    std::vector<float> dist((size_t)rw*rh); std::vector<int> I((size_t)r1*(rh+1)); std::fill(I.begin(), I.begin()+r1, 0);
     // Distance to the edge of valid depth, in cells (two chamfer passes).
     // Small gaps between the projected dots are no edge: a cell counts if depth lies within two cells.
     for (int y = 0; y < rh; y++) { int r = 0; I[(size_t)(y+1)*r1] = 0; for (int x = 0; x < rw; x++) { r += d.z[(size_t)(y+y0)*w+x+x0] > 0; I[(size_t)(y+1)*r1+x+1] = I[(size_t)y*r1+x+1]+r; } }
@@ -59,7 +58,7 @@ void Tsdf::computePixelWeights(const DepthMap& d, int x0, int y0, int x1, int y1
     }
     for (int y = 1; y < rh-1; y++) for (int x = 1; x < rw-1; x++) { const size_t p = (size_t)y*rw+x; float& v = dist[p]; v = std::min({v, dist[p-1]+1, dist[p-rw]+1, dist[p-rw-1]+1.4f, dist[p-rw+1]+1.4f}); }
     for (int y = rh-2; y >= 1; y--) for (int x = rw-2; x >= 1; x--) { const size_t p = (size_t)y*rw+x; float& v = dist[p]; v = std::min({v, dist[p+1]+1, dist[p+rw]+1, dist[p+rw+1]+1.4f, dist[p+rw-1]+1.4f}); }
-    pixelWeight_.assign((size_t)w*d.height, 0.f);
+    f.weight.assign((size_t)rw*rh, 0.f);
     const float ifx = 1.f/std::fabs(d.fx), ify = 1.f/d.fy;
     #pragma omp parallel for schedule(static)
     for (int y = 1; y < rh-1; y++) for (int x = 1; x < rw-1; x++) {
@@ -72,17 +71,21 @@ void Tsdf::computePixelWeights(const DepthMap& d, int x0, int y0, int x1, int y1
         if (zu > 0 && zd > 0) dzy = (zd-zu)*0.5f; else if (zd > 0) dzy = zd-z; else if (zu > 0) dzy = z-zu;
         const float gx = dzx/(z*ifx), gy = dzy/(z*ify);   // depth change per mm sideways
         const float cos2 = 1.f/(1.f+gx*gx+gy*gy);
-        pixelWeight_[p] = std::max(0.05f, edge*edge*(3-2*edge)*cos2);
+        f.weight[(size_t)y*rw+x] = std::max(0.05f, edge*edge*(3-2*edge)*cos2);
     }
 }
 void Tsdf::integrate(const DepthMap& d, const Pose& T, float maxWeight, const ColorImage* color, const ColorCalib* cc) {
+    prepare(d, T, single_); integrate(single_, maxWeight, color, cc);
+}
+void Tsdf::prepare(const DepthMap& d, const Pose& T, TsdfFrame& f) const {
+    f.depth = &d; f.camToWorld = T; f.weight.clear(); f.blocks.clear(); f.x0 = f.y0 = f.x1 = f.y1 = 0;
     const float bs = voxel_ * kBlockSide;
     const int w = d.width, h = d.height;
     // The rectangle holding all depth, with room for the steps below.
     int bx0 = w, by0 = h, bx1 = -1, by1 = -1;
     for (int y = 0; y < h; y++) { const float* row = d.z.data()+(size_t)y*w; for (int x = 0; x < w; x++) if (row[x] > 0) { if (x < bx0) bx0 = x; if (x > bx1) bx1 = x; if (y < by0) by0 = y; by1 = y; } }
-    if (bx1 < 0) { pixelWeight_.assign((size_t)w*h, 0.f); return; }   // an empty frame adds nothing
-    if (feather) { constexpr int kMargin = 4; computePixelWeights(d, std::max(0, bx0-kMargin), std::max(0, by0-kMargin), std::min(w, bx1+1+kMargin), std::min(h, by1+1+kMargin)); }
+    f.empty = bx1 < 0; if (f.empty) return;   // an empty frame adds nothing
+    if (feather) { constexpr int kMargin = 4; f.x0 = std::max(0, bx0-kMargin); f.y0 = std::max(0, by0-kMargin); f.x1 = std::min(w, bx1+1+kMargin); f.y1 = std::min(h, by1+1+kMargin); computePixelWeights(d, f); }
     // Blocks near the measured surface. Sampled on a sparse grid: a block spans many pixels.
     int tn = omp_get_max_threads();
     std::vector<std::vector<int64_t>> local(tn);
@@ -96,10 +99,8 @@ void Tsdf::integrate(const DepthMap& d, const Pose& T, float maxWeight, const Co
             float z = d.z[j*w+i];
             if (z <= 0) continue;
             V3 ray{(i - d.cx)*ifx, (j - d.cy)*ify, 1.f};
-            float n = norm(ray);
             for (float q = z - trunc_; q <= z + trunc_ + bs/2; q += bs/2) {
                 V3 p = T.apply(ray * q);
-                (void)n;
                 int bx = (int)std::floor(p.x/bs), by = (int)std::floor(p.y/bs), bz = (int)std::floor(p.z/bs);
                 // Neighbouring cells mostly reach the same blocks. Remembering the last ones here saves collecting them
                 // millions of times and sorting them afterwards on one core.
@@ -108,12 +109,15 @@ void Tsdf::integrate(const DepthMap& d, const Pose& T, float maxWeight, const Co
             }
         }
     }
-    touched_.clear();
-    for (auto& v : local) { touched_.insert(touched_.end(), v.begin(), v.end()); }
-    std::sort(touched_.begin(), touched_.end());
-    touched_.erase(std::unique(touched_.begin(), touched_.end()), touched_.end());
-    std::vector<Block*> active; active.reserve(touched_.size());
-    for (int64_t k : touched_) {
+    for (auto& v : local) { f.blocks.insert(f.blocks.end(), v.begin(), v.end()); }
+    std::sort(f.blocks.begin(), f.blocks.end());
+    f.blocks.erase(std::unique(f.blocks.begin(), f.blocks.end()), f.blocks.end());
+}
+void Tsdf::integrate(const TsdfFrame& f, float maxWeight, const ColorImage* color, const ColorCalib* cc) {
+    if (f.empty || !f.depth) return;
+    const DepthMap& d = *f.depth; const Pose& T = f.camToWorld; const int w = d.width, h = d.height;
+    std::vector<Block*> active; active.reserve(f.blocks.size());
+    for (int64_t k : f.blocks) {
         int bx = (int)((k >> 42) & 0x1fffff) - (1<<20), by = (int)((k >> 21) & 0x1fffff) - (1<<20), bz = (int)(k & 0x1fffff) - (1<<20);
         active.push_back(obtain(bx, by, bz));
     }
@@ -157,7 +161,7 @@ void Tsdf::integrate(const DepthMap& d, const Pose& T, float maxWeight, const Co
             float t = std::min(1.f, sdf*itrunc);
             Voxel& vx = b.v[(k*kBlockSide + jj)*kBlockSide + ii];
             // At least one step, so that a voxel never stays unseen because of a small weight.
-            const float add = feather ? std::max(1.f, kWeightScale*pixelWeight_[v*w+u]) : (float)kWeightScale;
+            const float add = feather ? std::max(1.f, kWeightScale*f.pixelWeight(u, v)) : (float)kWeightScale;
             const float W = vx.weight;
             vx.tsdf = (vx.tsdf*W + t*add)/(W + add);
             vx.weight = (uint16_t)std::min(maxWeight*kWeightScale, W + add);

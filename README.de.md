@@ -47,9 +47,9 @@ Alles läuft über Vorschau, dann Bestätigen oder Abbrechen. Jeder Schritt läs
 Zahlen im Export sind Millimeter. Modelle stehen mit Z nach oben und der Unterseite bei Z = 0. Mit Markern gilt die Teller-Ebene als Boden.
 
 ## Stand
-Vorhanden: Live-Tiefe, Tracking über Marker und Form, Drehteller-Modus, Objektwahl und Entfernen der Unterlage (mit Markern beim Scannen, ohne Marker nachträglich), Qualitätskarte, Hinweis bei zu wenig Form, Fusion, Netz, Export, Messwerkzeug (`voxelforge-cli messen`), Prüfung der Kalibrierung mit der Platte (`voxelforge-cli tafel`).
+Vorhanden: Live-Tiefe, Tracking über Marker und Form, Drehteller-Modus, Objektwahl und Entfernen der Unterlage (mit Markern beim Scannen, ohne Marker nachträglich), Qualitätskarte, Hinweise bei zu wenig Form und zu schneller Bewegung, Bearbeiten der Punktwolke vor der Fusion, Fusion, Netz, Export, Messwerkzeug (`voxelforge-cli messen`), Prüfung der Kalibrierung mit der Platte (`voxelforge-cli tafel`).
 Farbe: Punktfarben im Netz, Export als PLY und OBJ mit Vertex-Farben. Dafür braucht jeder Scanner eine eigene Farbkalibrierung, die noch nicht über die Oberfläche erstellt werden kann.
-Noch nicht vorhanden: Bearbeiten als Punktwolke vor der Fusion, Marker-Auswahl für die Schnittebene, Kalibrierfunktion in der Oberfläche, Textur-Atlas, Scanner-Tasten.
+Noch nicht vorhanden: Marker-Auswahl für die Schnittebene, Kalibrierfunktion in der Oberfläche, Textur-Atlas, Scanner-Tasten.
 Bekannt: Mit Markern sind Außenmaße um rund 0,1–0,4 mm zu klein, ohne Marker bei „Normal“ um rund 1 % zu groß, bei „Fein“ um rund 0,2 %. Für Teile, die passen müssen: Marker oder feinere Auflösung.
 
 
@@ -57,7 +57,7 @@ Bekannt: Mit Markern sind Außenmaße um rund 0,1–0,4 mm zu klein, ohne Marker
 - **Startseite:** die letzten Projekte mit Vorschaubild, neues Projekt, Projekt oder Modell öffnen.
 - **Neues Projekt:** braucht Name und Speicherort. Es bekommt einen eigenen Unterordner `<Speicherort>/<Name>/`.
 - **Einstellungen** (Zahnrad oben rechts): Standardspeicherpfad und Pfade zu den Slicern. Liegen in `~/.config/voxelforge/settings.ini`.
-- **Scan-Bereich:** Ein geöffnetes Projekt zeigt die Punktwolke seines letzten Scans. Ein Klick auf einen Scan in der Liste zeigt dessen Punktwolke, „Neuer Scan“ führt zum Livebild.
+- **Scan-Bereich:** Ein geöffnetes Projekt zeigt die Punktwolke seines letzten Scans. Ein Klick auf einen Scan in der Liste zeigt dessen Punktwolke, „Neuer Scan“ führt zum Livebild. Mit Lasso oder Rechteck lassen sich Punkte auswählen und vor Ausrichtung und Fusion aus dem Scan löschen (Hände, Halter, Reste), mit Rückgängig.
 - **Dateien:** Öffnen und Speichern laufen immer über einen Dateidialog (kdialog oder zenity, sonst ein eingebauter).
 - **3D-Druck:** Das Modell öffnet sich mit einem Klick in Bambu Studio, PrusaSlicer oder OrcaSlicer. Gesucht wird im Programmpfad, unter Flatpak und nach AppImages.
 - **Scanner-Haltung:** Quer oder hochkant. Das Livebild und die Richtung „oben“ des Modells drehen mit.

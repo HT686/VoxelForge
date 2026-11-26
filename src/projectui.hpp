@@ -86,7 +86,7 @@ private:
     void pointsChanged();             // after any change of the points: the live preview follows
     void showMerged();
     void removePair(size_t i);
-    void oneView(MeshView& view, ImVec2 size, const char* title, const Mesh* pickMesh, std::vector<V3>* points);
+    void oneView(MeshView& view, ImVec2 size, const char* title, const Mesh* pickMesh, std::vector<V3>* points, bool leftTurns = true);
     // Fusion dialog.
     bool fusionRequest_ = false; int fusionVoxel_ = 2, fusionNoise_ = 15; bool fusionKeepParts_ = false, fusionClean_ = true;
     void fusionDialog();
@@ -104,4 +104,18 @@ private:
     void showReview(int scan);
     void updateReview();
     void newScan(bool hasLive);
+    // Editing the point cloud of the scan being looked at, before alignment and fusion.
+    enum class CloudSelect { None, Lasso, Box };
+    CloudSelect cloudSelect_ = CloudSelect::None; bool cloudPenetrate_ = false;
+    std::vector<uint8_t> cloudMarked_; size_t cloudMarkedCount_ = 0;
+    std::vector<ImVec2> cloudLasso_; bool cloudDragging_ = false; ImVec2 cloudDragStart_{};
+    struct CutStep { int scan; ScanCut cut; };
+    std::vector<CutStep> cuts_;       // newest last
+    void cloudBar(ImVec2 origin, ImVec2 size);
+    void cloudInput(ImVec2 origin, bool hovered);
+    void finishCloudSelect(ImVec2 origin, bool remove);
+    void clearCloudMarks();
+    void deleteCloudMarked();
+    void undoCloudCut();
+    void uploadReview(bool resetCamera);
 };

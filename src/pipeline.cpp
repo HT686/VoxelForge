@@ -376,7 +376,8 @@ void Pipeline::trackAndIntegrate(const DepthMap& dIn) {
         if (stats_.integratedFrames == 0 && hasMarkerPose_) pose_ = markerPose_;   // the scan may have waited while the object turned
         const DepthMap& forModel = useDetail_ && &dIn == &depth_ ? detail_ : d;
         tsdf_->integrate(forModel, pose_, 64, colorReady_ ? &colorImage_ : nullptr, &colorCalib_); stats_.integratedFrames++;
-        if (hasLastIntegrated_) { float tr = 0; for (int r = 0; r < 3; r++) for (int k = 0; k < 3; k++) tr += lastIntegrated_.R[r*3+k]*pose_.R[r*3+k]; const float a = std::acos(std::clamp((tr-1)/2, -1.f, 1.f))*57.29578f; stats_.turnDegPerFrame += (a-stats_.turnDegPerFrame)*0.2f; }
+        if (hasLastIntegrated_) { float tr = 0; for (int r = 0; r < 3; r++) for (int k = 0; k < 3; k++) tr += lastIntegrated_.R[r*3+k]*pose_.R[r*3+k]; const float a = std::acos(std::clamp((tr-1)/2, -1.f, 1.f))*57.29578f; stats_.turnDegPerFrame += (a-stats_.turnDegPerFrame)*0.2f;
+            const V3 mid{0, 0, stats_.medianDepth > 0 ? stats_.medianDepth : 200.f}; const float mv = norm(lastIntegrated_.apply(mid)-pose_.apply(mid)); stats_.moveMmPerFrame += (mv-stats_.moveMmPerFrame)*0.2f; }
         lastIntegrated_ = pose_; hasLastIntegrated_ = true;
         rememberKeyframe();
         rememberFrame(forModel, currentFrame_);
@@ -522,14 +523,8 @@ bool Pipeline::rebuildModel(float voxelMm, std::string& report) {
     if (session_.empty()) { report = sessionBytes_ ? tr("Der Scan war zu lang, um ihn im Speicher zu behalten") : tr("Kein Scan im Speicher"); return false; }
     options.voxelMm = voxelMm;
     tsdf_ = std::make_unique<Tsdf>(voxelMm);
-    DepthMap d = sessionGrid_; d.z.assign((size_t)d.width*d.height, 0.f);
-    ColorImage img;
-    for (const ScanFrame& fr : session_) {
-        std::fill(d.z.begin(), d.z.end(), 0.f);
-        for (size_t i = 0; i < fr.cells.size(); i++) d.z[fr.cells[i]] = fr.z[i];
-        const bool col = colorCalib_.valid && !fr.colorJpeg.empty() && decodeJpeg(fr.colorJpeg, img);
-        tsdf_->integrate(d, fr.pose, 64, col ? &img : nullptr, &colorCalib_);
-    }
+    std::vector<FrameRef> refs; for (const ScanFrame& fr : session_) refs.push_back({&fr, fr.pose, &sessionGrid_, &colorCalib_});
+    integrateFrames(*tsdf_, refs, 64, colorCalib_.valid);
     pose_ = session_.back().pose;
     stats_.blocks = tsdf_->blockCount(); stats_.memoryBytes = tsdf_->memoryBytes();
     char b[120]; snprintf(b, sizeof b, tr("Neu berechnet mit %.2f mm aus %zu Bildern"), voxelMm, session_.size());

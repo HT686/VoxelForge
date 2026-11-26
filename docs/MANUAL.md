@@ -74,7 +74,7 @@ Messages in the view tell you what to do:
 | **Tracking good** | All is well |
 | **Checking position** | The markers suggest a position, and the surface has to confirm it |
 | **Position lost** | Tracking is lost. Go back to a part already scanned. |
-| **Turn more slowly** | Turning too fast |
+| **Turn more slowly** / **Move more slowly** | The object turns or the scanner moves too fast (more than about 3 degrees or 4.5 mm per frame). Tracking may get lost soon after. |
 | **Bring the whole plate into view** | Too few markers in view |
 | **Little shape in view** | The visible surface hardly holds the position, for example flat walls or a cylinder, and it may slip. Bring more of the object into view or use markers. |
 
@@ -92,6 +92,7 @@ No single view sees an object from all sides. Scan it, lay it on another side, a
 
 - **New scan** stores the current scan in the project and returns to the live picture.
 - Click a scan in the list to see its point cloud, in the scan's colors if it has any. An opened project starts with its last scan.
+- **Edit the point cloud** before aligning and fusing: the bar below the view has **Lasso** and **Rectangle**. Drag to select points (they turn red), Ctrl deselects, Shift+drag turns the view. **Penetrate** also takes hidden points behind. **Delete** (or the Del key) removes the selected points from every frame of the scan, so that alignment and fusion no longer see them: hands, clamps, a holder or stray pieces. **Undo** (Ctrl+Z) brings them back. Saving the project keeps the change.
 - The eye icon decides whether a scan is part of the model. The bin removes it.
 - A right click on a scan offers **Rename**, **Release alignment** (the scan is open again and can be aligned anew) and **Remove**.
 

@@ -41,6 +41,7 @@ struct PipelineStats {
     size_t blocks = 0, memoryBytes = 0;
     int markersDetected = 0;      // in this frame, known or not
     float turnDegPerFrame = 0;    // smoothed; fast turning loses frames
+    float moveMmPerFrame = 0;     // smoothed, of the spot in the middle of the view at the object's distance
     bool poseUnconfirmed = false; // the markers suggest a pose, but the surface does not agree yet
 };
 struct PipelineOptions {

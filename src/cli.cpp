@@ -255,7 +255,7 @@ int main(int argc, char** argv) {
             // Object center, in the coordinates of the first frame.
             V3 c{}; size_t nc = 0; { const ScanFrame& f0 = s.frames[0]; for (size_t i = 0; i < f0.cells.size(); i += 7) { const int x = (int)(f0.cells[i]%d.width), y = (int)(f0.cells[i]/d.width); const float z = f0.z[i]; c = c+V3{(x-d.cx)/d.fx*z, (y-d.cy)/d.fy*z, z}; nc++; } c = c*(1.f/std::max<size_t>(1, nc)); }
             const Pose t0inv = inversePose(s.frames[0].pose);
-            double sumDeg = 0, sumMm = 0; float maxDeg = 0, maxMm = 0, lastDeg = 0, lastMm = 0; int lost = 0, n = 0, warned = 0; const auto t0 = std::chrono::steady_clock::now();
+            double sumDeg = 0, sumMm = 0; float maxDeg = 0, maxMm = 0, lastDeg = 0, lastMm = 0; int lost = 0, n = 0, warned = 0, fast = 0, firstFast = -1; const auto t0 = std::chrono::steady_clock::now();
             for (size_t i = 0; i < s.frames.size(); i++) {
                 std::fill(d.z.begin(), d.z.end(), 0.f); const ScanFrame& f = s.frames[i]; for (size_t k = 0; k < f.cells.size(); k++) d.z[f.cells[k]] = f.z[k];
                 pipe.trackAndIntegrate(d);
@@ -264,6 +264,7 @@ int main(int argc, char** argv) {
                 if (getenv("VF_DEBUG") && i < 6) { size_t v = 0; for (float z : d.z) v += z > 0; printf("  Bild %zu: %zu Punkte, Zustand %d, Inlier %.2f, Rest %.2f, Punkte ICP %d\n", i, v, (int)pipe.stats().state, pipe.stats().inlierRatio, pipe.stats().rmsMm, pipe.stats().icpPoints); }
                 if (getenv("VF_FEST") && pipe.stats().state == TrackState::Good) { static std::vector<float> w; w.push_back(pipe.stats().weakest); if (i+1 == s.frames.size()) { std::sort(w.begin(), w.end()); printf("  fest: 1%% %.3f  5%% %.3f  50%% %.3f\n", w[w.size()/100], w[w.size()/20], w[w.size()/2]); w.clear(); } }
                 warned += pipe.stats().shapeWeak;
+                if (pipe.stats().turnDegPerFrame > 3.f || pipe.stats().moveMmPerFrame > 4.5f) { fast++; if (firstFast < 0) firstFast = (int)i; }
                 if (const char* vp = getenv("VF_VORSCHAU")) if (i == s.frames.size()/4 || i == s.frames.size()/2 || i+1 == s.frames.size()) {
                     std::vector<uint8_t> rgba; pipe.renderPreview(640, 400, rgba, true); const std::string path = std::string(vp)+"_"+std::to_string(i)+".ppm";
                     if (FILE* o = fopen(path.c_str(), "wb")) { fprintf(o, "P6 640 400 255\n"); for (size_t k = 0; k < rgba.size(); k += 4) { const uint8_t px[3] = {rgba[k+3] ? rgba[k] : (uint8_t)20, rgba[k+3] ? rgba[k+1] : (uint8_t)24, rgba[k+3] ? rgba[k+2] : (uint8_t)32}; fwrite(px, 1, 3, o); } fclose(o); }
@@ -275,7 +276,7 @@ int main(int argc, char** argv) {
                 sumDeg += deg; sumMm += mm; maxDeg = std::max(maxDeg, deg); maxMm = std::max(maxMm, mm); lastDeg = deg; lastMm = mm; n++;
             }
             const double dt = std::chrono::duration<double>(std::chrono::steady_clock::now()-t0).count();
-            printf("%-8s %5zu Bilder  verloren %4d  Winkel mittel %5.2f max %6.2f Ende %6.2f Grad  Mitte mittel %6.2f max %7.2f Ende %7.2f mm  Warnung %4d  %.1f ms/Bild\n", s.name.c_str(), s.frames.size(), lost, n ? sumDeg/n : 0, maxDeg, lastDeg, n ? sumMm/n : 0, maxMm, lastMm, warned, 1000*dt/s.frames.size());
+            printf("%-8s %5zu Bilder  verloren %4d  Winkel mittel %5.2f max %6.2f Ende %6.2f Grad  Mitte mittel %6.2f max %7.2f Ende %7.2f mm  Warnung %4d  zu schnell %4d ab %5d  %.1f ms/Bild\n", s.name.c_str(), s.frames.size(), lost, n ? sumDeg/n : 0, maxDeg, lastDeg, n ? sumMm/n : 0, maxMm, lastMm, warned, fast, firstFast, 1000*dt/s.frames.size());
             fflush(stdout);
         }
         return 0;

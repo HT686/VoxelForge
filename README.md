@@ -12,6 +12,7 @@
 - **Live scanning** with a turntable or by hand, held level or upright, at the scanner's full 30 frames per second
 - **Marker tracking** with a guide for the distance that gives the most detail
 - **Several scans, one model:** automatic alignment that says when it is not certain, and a manual alignment where one pair of points is often enough, then fine alignment and removal of stray points
+- **Edit before fusing:** select points of a stored scan with lasso or rectangle and remove them from every frame, so that hands, holders or stray pieces never reach the model
 - **With or without markers:** without markers the base is found and removed afterwards, a quality map shows where to keep scanning, and a hint appears when too little shape is in view
 - **Mesh tools:** one-click repair, hole filling with a choice of fill types, smoothing, simplifying, cut plane, measuring, undo
 - **Export** to STL, OBJ and PLY, and one click to open a model in Bambu Studio, PrusaSlicer or OrcaSlicer
